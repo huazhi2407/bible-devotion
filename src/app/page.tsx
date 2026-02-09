@@ -63,7 +63,6 @@ const STORAGE_BIBLE_ID = "devotion-bible-id";
 const BIBLE_ID_OPTIONS = [
   { id: "04fb2bec0d582d1f-01", label: "免費易讀聖經（新約）" },
   { id: "7ea794434e9ea7ee-01", label: "中文和合本（CUV）" },
-  { id: "9879d2657fe39de4-01", label: "中文標準譯本（CSB）" },
 ];
 
 declare global {
@@ -313,17 +312,21 @@ export default function DevotionPage() {
           if (res.status === 403) {
             const defaultBibleId = "04fb2bec0d582d1f-01"; // 免費易讀聖經
             const isUsingDefault = bibleId === defaultBibleId;
+            // 如果不是使用預設版本，自動切換回預設版本
+            if (!isUsingDefault) {
+              setBibleId(defaultBibleId);
+              localStorage.setItem(STORAGE_BIBLE_ID, defaultBibleId);
+            }
             throw new Error(
               `權限不足 (403)\n` +
               `目前使用的 Bible ID: ${bibleId}\n` +
               `您的 API Key 沒有權限存取此版本\n\n` +
-              `解決方法：\n` +
               (isUsingDefault 
-                ? `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
+                ? `解決方法：\n` +
+                  `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
                   `2. 或直接手動貼上經文`
-                : `1. 在設定中切換回「免費易讀聖經（新約）」（ID: ${defaultBibleId}）\n` +
-                  `2. 或在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入\n` +
-                  `3. 或直接手動貼上經文`)
+                : `已自動切換回「免費易讀聖經（新約）」，請重新載入經文。\n\n` +
+                  `若仍有問題，請在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入。`)
             );
           }
           if (res.status === 404) {
@@ -366,17 +369,21 @@ export default function DevotionPage() {
           if (res.status === 403) {
             const defaultBibleId = "04fb2bec0d582d1f-01"; // 免費易讀聖經
             const isUsingDefault = bibleId === defaultBibleId;
+            // 如果不是使用預設版本，自動切換回預設版本
+            if (!isUsingDefault) {
+              setBibleId(defaultBibleId);
+              localStorage.setItem(STORAGE_BIBLE_ID, defaultBibleId);
+            }
             throw new Error(
               `權限不足 (403)\n` +
               `目前使用的 Bible ID: ${bibleId}\n` +
               `您的 API Key 沒有權限存取此版本\n\n` +
-              `解決方法：\n` +
               (isUsingDefault 
-                ? `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
+                ? `解決方法：\n` +
+                  `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
                   `2. 或直接手動貼上經文`
-                : `1. 在設定中切換回「免費易讀聖經（新約）」（ID: ${defaultBibleId}）\n` +
-                  `2. 或在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入\n` +
-                  `3. 或直接手動貼上經文`)
+                : `已自動切換回「免費易讀聖經（新約）」，請重新載入經文。\n\n` +
+                  `若仍有問題，請在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入。`)
             );
           }
           if (res.status === 404) {
