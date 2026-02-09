@@ -60,15 +60,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) return;
     setLoading(true);
     try {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile) {
-        await signInWithRedirect(auth, googleProvider);
-      } else {
+      // 手機瀏覽器也嘗試使用 popup，若失敗再改用 redirect
+      try {
         await signInWithPopup(auth, googleProvider);
+        setLoading(false);
+      } catch (popupError: any) {
+        // Popup 被阻擋或失敗時，改用 redirect
+        if (popupError.code === 'auth/popup-blocked' || popupError.code === 'auth/popup-closed-by-user') {
+          await signInWithRedirect(auth, googleProvider);
+          // redirect 不會立即返回，所以不設定 loading=false
+        } else {
+          throw popupError;
+        }
       }
     } catch (err) {
-      console.error(err);
-    } finally {
+      console.error("登入失敗", err);
       setLoading(false);
     }
   }, []);
