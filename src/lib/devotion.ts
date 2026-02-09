@@ -47,8 +47,9 @@ export async function loadRecordsFirestore(uid: string): Promise<DevotionRecord[
     const q = query(col, orderBy("date", "desc"));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as DevotionRecord);
-  } catch {
-    return [];
+  } catch (err) {
+    console.error("載入 Firestore 記錄失敗", err);
+    throw err; // 重新拋出錯誤，讓上層知道失敗了
   }
 }
 
@@ -70,8 +71,12 @@ export async function saveRecordsFirestore(
     for (const d of snap.docs) {
       if (!ids.has(d.id)) await deleteDoc(d.ref);
     }
-  } catch (err) {
-    console.error("saveRecordsFirestore", err);
+    console.log(`已將 ${records.length} 筆記錄同步至 Firestore`);
+  } catch (err: any) {
+    console.error("saveRecordsFirestore 失敗", err);
+    if (err?.code === 'permission-denied') {
+      console.error("Firestore 權限被拒絕！請確認：\n1. 已登入 Google 帳號\n2. Firestore 規則已正確設定（firestore.rules）");
+    }
     throw err;
   }
 }
@@ -111,10 +116,14 @@ export async function loadRecords(uid?: string | null): Promise<DevotionRecord[]
     try {
       const cloud = await loadRecordsFirestore(uid);
       // 登入時優先使用 Firestore，即使為空也使用（不回退到 localStorage）
+      console.log(`從 Firestore 載入 ${cloud.length} 筆記錄`);
       return cloud;
-    } catch (err) {
+    } catch (err: any) {
       console.error("載入 Firestore 失敗，改用本機記錄", err);
-      // Firestore 錯誤時，改用本機
+      // Firestore 錯誤時（例如規則未設定），改用本機
+      if (err?.code === 'permission-denied') {
+        console.warn("Firestore 權限被拒絕，請檢查 Firestore 規則是否已設定");
+      }
       return loadRecordsLocal();
     }
   }
