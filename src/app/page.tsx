@@ -16,7 +16,6 @@ type Phase =
   | "prayer-write";
 
 const PRAYER_MINUTES = 5;
-const PRAYER_SECONDS_FOR_TEST = 10; // 測試時改為 10 秒，正式時改回用下方 PRAYER_MINUTES
 const YOUTUBE_VIDEO_ID = "V7Bohz21qq4"; // https://youtu.be/V7Bohz21qq4
 const YOUTUBE_AUDIO_URL = "https://www.youtube.com/watch?v=V7Bohz21qq4"; // 手機備用
 
@@ -322,7 +321,7 @@ export default function DevotionPage() {
     if (phase !== "prayer") return;
     const t = setTimeout(
       () => setPhase("scripture"),
-      PRAYER_SECONDS_FOR_TEST * 1000
+      PRAYER_MINUTES * 60 * 1000
     );
     return () => clearTimeout(t);
   }, [phase]);
@@ -654,6 +653,15 @@ export default function DevotionPage() {
           <p className="text-[var(--text-quiet)] text-base mt-6 opacity-80">
             在這段時間裡保持靜默。時間到了，經文會自動出現。
           </p>
+          <div className="mt-8">
+            <button
+              type="button"
+              onClick={() => setPhase("scripture")}
+              className="px-6 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-quiet)] text-sm hover:bg-[var(--bg-softer)] hover:text-[var(--text-soft)] transition-colors"
+            >
+              跳過，直接進入經文
+            </button>
+          </div>
           {typeof window !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
             <div className="mt-8 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)]">
               <p className="text-[var(--text-quiet)] text-sm mb-3">
