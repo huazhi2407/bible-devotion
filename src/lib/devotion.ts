@@ -105,14 +105,17 @@ export function isToday(iso: string) {
   );
 }
 
-/** 依登入狀態載入記錄：uid 時從 Firestore，失敗或空則改用 localStorage */
+/** 依登入狀態載入記錄：uid 時從 Firestore，失敗則改用 localStorage */
 export async function loadRecords(uid?: string | null): Promise<DevotionRecord[]> {
   if (uid && db) {
     try {
       const cloud = await loadRecordsFirestore(uid);
-      if (cloud.length > 0) return cloud;
-    } catch {
-      // Firestore 錯誤，改用本機
+      // 登入時優先使用 Firestore，即使為空也使用（不回退到 localStorage）
+      return cloud;
+    } catch (err) {
+      console.error("載入 Firestore 失敗，改用本機記錄", err);
+      // Firestore 錯誤時，改用本機
+      return loadRecordsLocal();
     }
   }
   return loadRecordsLocal();

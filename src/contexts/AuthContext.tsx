@@ -17,6 +17,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, googleProvider, isFirebaseReady } from "@/lib/firebase";
+import { loadRecordsLocal, saveRecordsFirestore, loadRecordsFirestore } from "@/lib/devotion";
 
 type AuthContextValue = {
   user: User | null;
@@ -27,6 +28,24 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+// 同步本機記錄到 Firestore（僅在首次登入時執行一次）
+async function syncLocalToFirestore(uid: string) {
+  try {
+    const cloudRecords = await loadRecordsFirestore(uid);
+    // 如果 Firestore 已有記錄，不覆蓋
+    if (cloudRecords.length > 0) return;
+    
+    const localRecords = loadRecordsLocal();
+    // 如果本機有記錄且 Firestore 為空，上傳本機記錄
+    if (localRecords.length > 0) {
+      await saveRecordsFirestore(uid, localRecords);
+      console.log(`已將 ${localRecords.length} 筆本機記錄同步至雲端`);
+    }
+  } catch (err) {
+    console.error("同步本機記錄失敗", err);
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -42,14 +61,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const result = await getRedirectResult(auth!);
-        if (result?.user) setUser(result.user);
+        if (result?.user) {
+          setUser(result.user);
+          // 登入成功後，同步本機記錄到 Firestore
+          await syncLocalToFirestore(result.user.uid);
+        }
       } catch (err) {
         console.error("redirect result", err);
       } finally {
         setLoading(false);
       }
     })();
-    const unsub = onAuthStateChanged(auth, (u) => {
+    let hasSynced = false; // 避免重複同步
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (u && !hasSynced) {
+        // 首次登入時，同步本機記錄到 Firestore
+        hasSynced = true;
+        await syncLocalToFirestore(u.uid);
+      }
       setUser(u);
       setLoading(false);
     });
