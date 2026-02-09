@@ -68,7 +68,11 @@ declare global {
 
 function useYouTubeBackgroundMusic(isPlaying: boolean) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<ReturnType<typeof Window.prototype.YT.Player> | null>(null);
+  const playerRef = useRef<{
+    playVideo: () => void;
+    pauseVideo: () => void;
+    destroy: () => void;
+  } | null>(null);
 
   useEffect(() => {
     if (!isPlaying || typeof window === "undefined") return;
