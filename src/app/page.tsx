@@ -33,7 +33,6 @@ const DEFAULT_SCRIPTURE = {
 };
 
 const API_BASE = "https://rest.api.bible/v1";
-const BIBLE_GATEWAY_BASE = "https://www.biblegateway.com/passage";
 
 const FONT_OPTIONS: { id: string; label: string; value: string }[] = [
   { id: "serif", label: "襯線（預設）", value: "Georgia, Cambria, \"Times New Roman\", serif" },
@@ -276,102 +275,6 @@ export default function DevotionPage() {
     ? Array.from({ length: selectedBook.chapters }, (_, i) => i + 1)
     : [];
 
-  const loadScriptureFromBibleGateway = useCallback(async () => {
-    const book = BIBLE_BOOKS[bookIndex];
-    const from = verseFrom.trim() ? parseInt(verseFrom.trim(), 10) : 0;
-    const to = verseTo.trim() ? parseInt(verseTo.trim(), 10) : 0;
-    const useRange = from > 0;
-    
-    setScriptureError(null);
-    setScriptureLoading(true);
-    
-    try {
-      // 構建 Bible Gateway URL（使用 CUV 和合本）
-      let passage: string;
-      if (useRange && to > 0 && to >= from) {
-        passage = `${book.name}+${chapter}:${from}-${to}`;
-      } else if (useRange) {
-        passage = `${book.name}+${chapter}:${from}`;
-      } else {
-        passage = `${book.name}+${chapter}`;
-      }
-      
-      // Bible Gateway 中文和合本 URL
-      const url = `${BIBLE_GATEWAY_BASE}/?search=${encodeURIComponent(passage)}&version=CUV`;
-      
-      // 嘗試多個 CORS proxy（依序嘗試，因為這些服務可能不穩定）
-      const proxies = [
-        `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-      ];
-      
-      let html: string | null = null;
-      
-      for (const proxyUrl of proxies) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 秒超時
-          
-          const res = await fetch(proxyUrl, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          
-          if (!res.ok) continue;
-          
-          const data = await res.json();
-          html = data.contents || data.body || data;
-          if (html && typeof html === 'string' && html.length > 100) break;
-        } catch (err) {
-          continue; // 嘗試下一個 proxy
-        }
-      }
-      
-      if (!html) {
-        throw new Error(
-          `Bible Gateway 載入失敗（CORS proxy 無法連線）。\n\n` +
-          `建議：\n` +
-          `1. 直接從 Bible Gateway 網站（biblegateway.com）複製經文貼上\n` +
-          `2. 或使用 API.Bible 載入功能`
-        );
-      }
-      
-      // 解析 HTML 取得經文內容
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
-      
-      // Bible Gateway 的經文通常在這些選擇器中
-      const passageText = 
-        doc.querySelector(".passage-text")?.textContent?.trim() ||
-        doc.querySelector(".passage-content")?.textContent?.trim() ||
-        doc.querySelector(".bcvtext")?.textContent?.trim() ||
-        doc.querySelector(".text-html")?.textContent?.trim() ||
-        doc.querySelector("[class*='passage']")?.textContent?.trim();
-      
-      if (!passageText || passageText.length < 10) {
-        throw new Error(
-          `無法從 Bible Gateway 解析經文內容。\n\n` +
-          `建議：直接從 Bible Gateway 網站複製經文貼上，或使用 API.Bible。`
-        );
-      }
-      
-      const reference = useRange && to > 0 && to >= from
-        ? `${book.name} ${chapter}:${from}-${to}`
-        : useRange
-        ? `${book.name} ${chapter}:${from}`
-        : `${book.name} ${chapter}`;
-      
-      setTodayScripture({
-        reference,
-        text: passageText.replace(/\s+/g, " ").trim(),
-      });
-      setScriptureLoading(false);
-      setShowApiSelector(false);
-    } catch (err: any) {
-      setScriptureError(err.message || "Bible Gateway 載入失敗");
-      setScriptureLoading(false);
-    }
-  }, [bookIndex, chapter, verseFrom, verseTo]);
-
   const loadScripture = useCallback(async () => {
     const book = BIBLE_BOOKS[bookIndex];
     const apiKey = process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY;
@@ -408,11 +311,19 @@ export default function DevotionPage() {
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           if (res.status === 403) {
+            const defaultBibleId = "04fb2bec0d582d1f-01"; // 免費易讀聖經
+            const isUsingDefault = bibleId === defaultBibleId;
             throw new Error(
-              `權限不足 (403)。可能原因：\n` +
-              `1. API Key 沒有權限存取此 Bible 版本\n` +
-              `2. Bible ID 不正確\n` +
-              `請在 API.Bible 儀表板確認可用的 Bible 版本`
+              `權限不足 (403)\n` +
+              `目前使用的 Bible ID: ${bibleId}\n` +
+              `您的 API Key 沒有權限存取此版本\n\n` +
+              `解決方法：\n` +
+              (isUsingDefault 
+                ? `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
+                  `2. 或直接手動貼上經文`
+                : `1. 在設定中切換回「免費易讀聖經（新約）」（ID: ${defaultBibleId}）\n` +
+                  `2. 或在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入\n` +
+                  `3. 或直接手動貼上經文`)
             );
           }
           if (res.status === 404) {
@@ -426,9 +337,9 @@ export default function DevotionPage() {
               (isOldTestament 
                 ? `1. 在設定中切換到包含舊約的版本（如「中文和合本」）\n` +
                   `2. 或嘗試新約書卷（如約翰福音、馬太福音）\n` +
-                  `3. 或使用 Bible Gateway 載入功能`
+                  `3. 或直接手動貼上經文`
                 : `1. 在設定中切換到其他中文版本\n` +
-                  `2. 或使用 Bible Gateway 載入功能`)
+                  `2. 或直接手動貼上經文`)
             );
           }
           throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
@@ -453,11 +364,19 @@ export default function DevotionPage() {
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           if (res.status === 403) {
+            const defaultBibleId = "04fb2bec0d582d1f-01"; // 免費易讀聖經
+            const isUsingDefault = bibleId === defaultBibleId;
             throw new Error(
-              `權限不足 (403)。可能原因：\n` +
-              `1. API Key 沒有權限存取此 Bible 版本\n` +
-              `2. Bible ID 不正確\n` +
-              `請在 API.Bible 儀表板確認可用的 Bible 版本`
+              `權限不足 (403)\n` +
+              `目前使用的 Bible ID: ${bibleId}\n` +
+              `您的 API Key 沒有權限存取此版本\n\n` +
+              `解決方法：\n` +
+              (isUsingDefault 
+                ? `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
+                  `2. 或直接手動貼上經文`
+                : `1. 在設定中切換回「免費易讀聖經（新約）」（ID: ${defaultBibleId}）\n` +
+                  `2. 或在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入\n` +
+                  `3. 或直接手動貼上經文`)
             );
           }
           if (res.status === 404) {
@@ -471,9 +390,9 @@ export default function DevotionPage() {
               (isOldTestament 
                 ? `1. 在設定中切換到包含舊約的版本（如「中文和合本」）\n` +
                   `2. 或嘗試新約書卷\n` +
-                  `3. 或使用 Bible Gateway 載入功能`
+                  `3. 或直接手動貼上經文`
                 : `1. 在設定中切換到其他中文版本\n` +
-                  `2. 或使用 Bible Gateway 載入功能`)
+                  `2. 或直接手動貼上經文`)
             );
           }
           throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
@@ -779,14 +698,6 @@ export default function DevotionPage() {
               <div className="flex gap-2 mb-3">
                 <button
                   type="button"
-                  onClick={loadScriptureFromBibleGateway}
-                  disabled={scriptureLoading}
-                  className="flex-1 px-4 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-[var(--bg-softer)] disabled:opacity-60 bg-blue-50 border-blue-200"
-                >
-                  {scriptureLoading ? "載入中…" : "從 Bible Gateway 載入（和合本）"}
-                </button>
-                <button
-                  type="button"
                   onClick={loadScripture}
                   disabled={scriptureLoading || !process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY}
                   className="flex-1 px-4 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-[var(--bg-softer)] disabled:opacity-60"
@@ -797,7 +708,7 @@ export default function DevotionPage() {
               </div>
               {!process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY && (
                 <p className="text-[var(--accent-subtle)] text-xs">
-                  API.Bible 需要設定 NEXT_PUBLIC_SCRIPTURE_API_KEY。Bible Gateway 不需要 API Key，但可能較慢。
+                  API.Bible 需要設定 NEXT_PUBLIC_SCRIPTURE_API_KEY。若無法使用 API，請直接手動貼上經文。
                 </p>
               )}
               <div className="flex flex-wrap gap-3">
