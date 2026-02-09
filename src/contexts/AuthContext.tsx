@@ -60,17 +60,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) return;
     setLoading(true);
     try {
-      // Safari 和大部分瀏覽器都優先使用 popup（避免 sessionStorage 問題）
-      // 只有當 popup 被明確阻擋時才改用 redirect
+      // 優先使用 popup（避免 Safari sessionStorage 問題）
       try {
         await signInWithPopup(auth, googleProvider);
         setLoading(false);
       } catch (popupError: any) {
-        // Popup 被阻擋時，改用 redirect（但 Safari 可能仍有 sessionStorage 問題）
+        // Popup 被阻擋時，改用 redirect
         if (popupError.code === 'auth/popup-blocked') {
-          console.warn("彈出視窗被阻擋，改用重新導向。若在 Safari 上失敗，請允許彈出視窗。");
-          await signInWithRedirect(auth, googleProvider);
-          // redirect 不會立即返回，所以不設定 loading=false
+          const useRedirect = confirm(
+            "瀏覽器阻擋了彈出視窗。\n\n" +
+            "選項 1：點「確定」使用重新導向登入（會跳轉到新頁面）\n" +
+            "選項 2：點「取消」，然後在瀏覽器設定中允許此網站的彈出視窗後重試"
+          );
+          if (useRedirect) {
+            await signInWithRedirect(auth, googleProvider);
+            // redirect 不會立即返回，所以不設定 loading=false
+          } else {
+            setLoading(false);
+          }
         } else if (popupError.code === 'auth/popup-closed-by-user') {
           // 用戶關閉彈出視窗，不視為錯誤
           setLoading(false);
@@ -78,10 +85,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw popupError;
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("登入失敗", err);
       setLoading(false);
-      alert("登入失敗。若使用 Safari，請允許彈出視窗，或嘗試使用 Chrome 瀏覽器。");
+      const errorMsg = err?.code === 'auth/popup-blocked' 
+        ? "請允許瀏覽器的彈出視窗，然後重試登入。"
+        : err?.message || "登入失敗，請重試。";
+      alert(errorMsg);
     }
   }, []);
 
