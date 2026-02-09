@@ -16,8 +16,16 @@ type Phase =
   | "prayer-write";
 
 const PRAYER_MINUTES = 5;
-const YOUTUBE_VIDEO_ID = "V7Bohz21qq4"; // https://youtu.be/V7Bohz21qq4
-const YOUTUBE_AUDIO_URL = "https://www.youtube.com/watch?v=V7Bohz21qq4"; // 手機備用
+
+const MUSIC_OPTIONS = [
+  { id: "V7Bohz21qq4", label: "音樂 1", url: "https://youtu.be/V7Bohz21qq4" },
+  { id: "QcunXPt6ZzM", label: "音樂 2", url: "https://youtu.be/QcunXPt6ZzM" },
+  { id: "G43H8uk633A", label: "音樂 3", url: "https://youtu.be/G43H8uk633A" },
+  { id: "WmgrMH2ltD4", label: "音樂 4", url: "https://youtu.be/WmgrMH2ltD4" },
+  { id: "5XELCMPGo_c", label: "音樂 5", url: "https://youtu.be/5XELCMPGo_c" },
+];
+
+const DEFAULT_MUSIC_ID = MUSIC_OPTIONS[0].id;
 
 const DEFAULT_SCRIPTURE = {
   reference: "詩篇 46:10",
@@ -48,6 +56,7 @@ const SCRIPTURE_SIZE_OPTIONS: { id: string; label: string; className: string }[]
 const STORAGE_FONT = "devotion-font";
 const STORAGE_FONT_SIZE = "devotion-font-size";
 const STORAGE_SCRIPTURE_SIZE = "devotion-scripture-size";
+const STORAGE_MUSIC_ID = "devotion-music-id";
 
 declare global {
   interface Window {
@@ -66,7 +75,7 @@ declare global {
   }
 }
 
-function useYouTubeBackgroundMusic(isPlaying: boolean) {
+function useYouTubeBackgroundMusic(isPlaying: boolean, videoId: string) {
   const containerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playerRef = useRef<{
@@ -95,7 +104,7 @@ function useYouTubeBackgroundMusic(isPlaying: boolean) {
       if (!containerRef.current) return;
       // 手機上直接嵌入 YouTube iframe，讓用戶可以手動播放
       const iframe = document.createElement("iframe");
-      iframe.src = `https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?autoplay=1&loop=1&playlist=${YOUTUBE_VIDEO_ID}&controls=0&mute=0&enablejsapi=1`;
+      iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&controls=0&mute=0&enablejsapi=1`;
       iframe.allow = "autoplay; encrypted-media";
       iframe.style.width = "100%";
       iframe.style.height = "100%";
@@ -124,11 +133,11 @@ function useYouTubeBackgroundMusic(isPlaying: boolean) {
     const initPlayer = () => {
       if (!containerRef.current) return;
       playerRef.current = new window.YT.Player(containerRef.current, {
-        videoId: YOUTUBE_VIDEO_ID,
+        videoId: videoId,
         playerVars: {
           autoplay: 1,
           loop: 1,
-          playlist: YOUTUBE_VIDEO_ID,
+          playlist: videoId,
           controls: 0,
           showinfo: 0,
           modestbranding: 1,
@@ -143,7 +152,7 @@ function useYouTubeBackgroundMusic(isPlaying: boolean) {
       playerRef.current?.destroy?.();
       playerRef.current = null;
     };
-  }, [isPlaying, isMobile]);
+  }, [isPlaying, isMobile, videoId]);
 
   return containerRef;
 }
@@ -164,22 +173,27 @@ export default function DevotionPage() {
   const [fontFamily, setFontFamily] = useState("serif");
   const [fontSize, setFontSize] = useState("medium");
   const [scriptureSize, setScriptureSize] = useState("medium");
+  const [musicId, setMusicId] = useState(DEFAULT_MUSIC_ID);
   const [panelOpen, setPanelOpen] = useState(false);
   const [records, setRecords] = useState<DevotionRecord[]>([]);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const router = useRouter();
   const { user, loading: authLoading, signInWithGoogle, signOut, isReady } = useAuth();
   const musicPlaying = phase !== "idle";
-  const youtubeContainerRef = useYouTubeBackgroundMusic(musicPlaying);
+  const youtubeContainerRef = useYouTubeBackgroundMusic(musicPlaying, musicId);
 
   useEffect(() => {
     try {
       const storedFont = localStorage.getItem(STORAGE_FONT);
       const storedSize = localStorage.getItem(STORAGE_FONT_SIZE);
       const storedScriptureSize = localStorage.getItem(STORAGE_SCRIPTURE_SIZE);
+      const storedMusicId = localStorage.getItem(STORAGE_MUSIC_ID);
       if (storedFont) setFontFamily(storedFont);
       if (storedSize) setFontSize(storedSize);
       if (storedScriptureSize) setScriptureSize(storedScriptureSize);
+      if (storedMusicId && MUSIC_OPTIONS.some(m => m.id === storedMusicId)) {
+        setMusicId(storedMusicId);
+      }
     } catch (_) {}
   }, []);
 
@@ -232,8 +246,9 @@ export default function DevotionPage() {
       localStorage.setItem(STORAGE_FONT, fontFamily);
       localStorage.setItem(STORAGE_FONT_SIZE, fontSize);
       localStorage.setItem(STORAGE_SCRIPTURE_SIZE, scriptureSize);
+      localStorage.setItem(STORAGE_MUSIC_ID, musicId);
     } catch (_) {}
-  }, [fontFamily, fontSize, scriptureSize]);
+  }, [fontFamily, fontSize, scriptureSize, musicId]);
 
   const scriptureSizeClass =
     SCRIPTURE_SIZE_OPTIONS.find((s) => s.id === scriptureSize)?.className ??
@@ -440,6 +455,18 @@ export default function DevotionPage() {
                 >
                   {SCRIPTURE_SIZE_OPTIONS.map((s) => (
                     <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-quiet)] text-sm">背景音樂</span>
+                <select
+                  value={musicId}
+                  onChange={(e) => setMusicId(e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
+                >
+                  {MUSIC_OPTIONS.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
               </label>
@@ -680,6 +707,9 @@ export default function DevotionPage() {
               >
                 ▶ 播放背景音樂
               </button>
+              <p className="text-[var(--accent-subtle)] text-xs mt-2">
+                目前播放：{MUSIC_OPTIONS.find(m => m.id === musicId)?.label || "音樂 1"}
+              </p>
               <p className="text-[var(--accent-subtle)] text-xs mt-2">
                 手機瀏覽器需要點擊才能播放音樂
               </p>
