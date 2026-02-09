@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-softer: #f9f8f4;
+  --text-soft: #4a4a4a;
+  --text-quiet: #6b7280;
+  --border-soft: #e5e7eb;
+  --accent-subtle: #9ca3af;
+}
+
+/* 強制淺色主題，移除 Next.js 預設深色模式 */
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--bg-softer);
+  color: var(--text-soft);
+  transition: font-size 0.2s ease, font-family 0.2s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.8s ease-out forwards;
+}

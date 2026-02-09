@@ -1,0 +1,6 @@
+To create favicon.ico and remove the 404:
+  From project root, run:  node scripts/gen-favicon.js
+
+This creates a simple 16x16 dark gray favicon.ico here.
+If Node is not in PATH when you open a new terminal, use the same
+terminal where you run "npm run dev" (Node is available there).
