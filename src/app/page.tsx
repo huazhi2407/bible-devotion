@@ -283,27 +283,59 @@ export default function DevotionPage() {
       // Bible Gateway 中文和合本 URL
       const url = `${BIBLE_GATEWAY_BASE}/?search=${encodeURIComponent(passage)}&version=CUV`;
       
-      // 使用 CORS proxy 或直接 fetch（如果允許）
-      // 注意：Bible Gateway 可能阻擋直接 fetch，需要後端代理
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const res = await fetch(proxyUrl);
+      // 嘗試多個 CORS proxy（依序嘗試，因為這些服務可能不穩定）
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+      ];
       
-      if (!res.ok) {
-        throw new Error(`無法載入經文 (${res.status})`);
+      let html: string | null = null;
+      
+      for (const proxyUrl of proxies) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 秒超時
+          
+          const res = await fetch(proxyUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          
+          if (!res.ok) continue;
+          
+          const data = await res.json();
+          html = data.contents || data.body || data;
+          if (html && typeof html === 'string' && html.length > 100) break;
+        } catch (err) {
+          continue; // 嘗試下一個 proxy
+        }
       }
       
-      const data = await res.json();
-      const html = data.contents;
+      if (!html) {
+        throw new Error(
+          `Bible Gateway 載入失敗（CORS proxy 無法連線）。\n\n` +
+          `建議：\n` +
+          `1. 直接從 Bible Gateway 網站（biblegateway.com）複製經文貼上\n` +
+          `2. 或使用 API.Bible 載入功能`
+        );
+      }
       
       // 解析 HTML 取得經文內容
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
       
-      // Bible Gateway 的經文通常在 .passage-text 或 .passage-content 中
-      const passageText = doc.querySelector(".passage-text, .passage-content, .bcvtext")?.textContent?.trim();
+      // Bible Gateway 的經文通常在這些選擇器中
+      const passageText = 
+        doc.querySelector(".passage-text")?.textContent?.trim() ||
+        doc.querySelector(".passage-content")?.textContent?.trim() ||
+        doc.querySelector(".bcvtext")?.textContent?.trim() ||
+        doc.querySelector(".text-html")?.textContent?.trim() ||
+        doc.querySelector("[class*='passage']")?.textContent?.trim();
       
-      if (!passageText) {
-        throw new Error("無法從 Bible Gateway 解析經文內容");
+      if (!passageText || passageText.length < 10) {
+        throw new Error(
+          `無法從 Bible Gateway 解析經文內容。\n\n` +
+          `建議：直接從 Bible Gateway 網站複製經文貼上，或使用 API.Bible。`
+        );
       }
       
       const reference = useRange && to > 0 && to >= from
