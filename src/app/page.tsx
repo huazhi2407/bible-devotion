@@ -18,6 +18,7 @@ type Phase =
 const PRAYER_MINUTES = 5;
 const PRAYER_SECONDS_FOR_TEST = 10; // 測試時改為 10 秒，正式時改回用下方 PRAYER_MINUTES
 const YOUTUBE_VIDEO_ID = "V7Bohz21qq4"; // https://youtu.be/V7Bohz21qq4
+const YOUTUBE_AUDIO_URL = "https://www.youtube.com/watch?v=V7Bohz21qq4"; // 手機備用
 
 const DEFAULT_SCRIPTURE = {
   reference: "詩篇 46:10",
@@ -68,15 +69,47 @@ declare global {
 
 function useYouTubeBackgroundMusic(isPlaying: boolean) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const playerRef = useRef<{
     playVideo: () => void;
     pauseVideo: () => void;
     destroy: () => void;
   } | null>(null);
+  const isMobile = typeof window !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   useEffect(() => {
-    if (!isPlaying || typeof window === "undefined") return;
+    if (!isPlaying || typeof window === "undefined") {
+      // 停止播放
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (playerRef.current) {
+        playerRef.current.destroy?.();
+        playerRef.current = null;
+      }
+      return;
+    }
 
+    // 手機瀏覽器：使用 YouTube 嵌入 iframe（簡化版，不依賴 API）
+    if (isMobile) {
+      if (!containerRef.current) return;
+      // 手機上直接嵌入 YouTube iframe，讓用戶可以手動播放
+      const iframe = document.createElement("iframe");
+      iframe.src = `https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?autoplay=1&loop=1&playlist=${YOUTUBE_VIDEO_ID}&controls=0&mute=0&enablejsapi=1`;
+      iframe.allow = "autoplay; encrypted-media";
+      iframe.style.width = "100%";
+      iframe.style.height = "100%";
+      iframe.style.border = "none";
+      containerRef.current.innerHTML = "";
+      containerRef.current.appendChild(iframe);
+      
+      return () => {
+        if (containerRef.current) containerRef.current.innerHTML = "";
+      };
+    }
+
+    // 桌面瀏覽器：使用 YouTube iframe API
     const loadScript = () => {
       if (window.YT?.ready) {
         window.YT.ready(initPlayer);
@@ -111,7 +144,7 @@ function useYouTubeBackgroundMusic(isPlaying: boolean) {
       playerRef.current?.destroy?.();
       playerRef.current = null;
     };
-  }, [isPlaying]);
+  }, [isPlaying, isMobile]);
 
   return containerRef;
 }
@@ -621,6 +654,29 @@ export default function DevotionPage() {
           <p className="text-[var(--text-quiet)] text-base mt-6 opacity-80">
             在這段時間裡保持靜默。時間到了，經文會自動出現。
           </p>
+          {typeof window !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
+            <div className="mt-8 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)]">
+              <p className="text-[var(--text-quiet)] text-sm mb-3">
+                背景音樂已載入
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const iframe = youtubeContainerRef.current?.querySelector("iframe");
+                  if (iframe) {
+                    // 觸發 YouTube iframe 播放（需要用戶互動）
+                    iframe.contentWindow?.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                  }
+                }}
+                className="px-4 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-white transition-colors"
+              >
+                ▶ 播放背景音樂
+              </button>
+              <p className="text-[var(--accent-subtle)] text-xs mt-2">
+                手機瀏覽器需要點擊才能播放音樂
+              </p>
+            </div>
+          )}
         </section>
       )}
 
