@@ -32,7 +32,7 @@ const DEFAULT_SCRIPTURE = {
   text: "你們要休息，要知道我是神；我必在外邦中被尊崇，在遍地上也被尊崇。",
 };
 
-const API_BASE = "https://api.scripture.api.bible/v1";
+const API_BASE = "https://rest.api.bible/v1";
 
 const FONT_OPTIONS: { id: string; label: string; value: string }[] = [
   { id: "serif", label: "襯線（預設）", value: "Georgia, Cambria, \"Times New Roman\", serif" },
@@ -284,7 +284,12 @@ export default function DevotionPage() {
         const chapterId = `${book.id}.${chapter}`;
         const res = await fetch(
           `${API_BASE}/bibles/${bibleId}/chapters/${chapterId}?content-type=text&include-verse-numbers=false&include-chapter-numbers=false`,
-          { headers: { "api-key": apiKey } }
+          { 
+            headers: { 
+              "api-key": apiKey.trim(),
+              "Accept": "application/json"
+            } 
+          }
         );
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
@@ -300,7 +305,12 @@ export default function DevotionPage() {
             : `${book.id}.${chapter}.${from}`;
         const res = await fetch(
           `${API_BASE}/bibles/${bibleId}/passages/${passageId}?content-type=text&include-verse-numbers=false&include-chapter-numbers=false`,
-          { headers: { "api-key": apiKey } }
+          { 
+            headers: { 
+              "api-key": apiKey.trim(),
+              "Accept": "application/json"
+            } 
+          }
         );
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
