@@ -262,8 +262,9 @@ export default function DevotionPage() {
   const loadScripture = useCallback(async () => {
     const book = BIBLE_BOOKS[bookIndex];
     const apiKey = process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY;
+    // 使用可用的中文版本（簡體當代譯本 2022）
     const bibleId =
-      process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "9879d2657fe39de4-01";
+      process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "7ea794434e9ea7ee-01";
     if (!apiKey) {
       setScriptureError("請在環境變數設定 NEXT_PUBLIC_SCRIPTURE_API_KEY（至 https://scripture.api.bible 申請）");
       return;
@@ -293,6 +294,14 @@ export default function DevotionPage() {
         );
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
+          if (res.status === 403) {
+            throw new Error(
+              `權限不足 (403)。可能原因：\n` +
+              `1. API Key 沒有權限存取此 Bible 版本\n` +
+              `2. Bible ID 不正確\n` +
+              `請在 API.Bible 儀表板確認可用的 Bible 版本`
+            );
+          }
           throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
         }
         const data = await res.json();
@@ -314,6 +323,14 @@ export default function DevotionPage() {
         );
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
+          if (res.status === 403) {
+            throw new Error(
+              `權限不足 (403)。可能原因：\n` +
+              `1. API Key 沒有權限存取此 Bible 版本\n` +
+              `2. Bible ID 不正確\n` +
+              `請在 API.Bible 儀表板確認可用的 Bible 版本`
+            );
+          }
           throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
         }
         const data = await res.json();
