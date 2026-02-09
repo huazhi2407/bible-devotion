@@ -58,6 +58,14 @@ const STORAGE_FONT = "devotion-font";
 const STORAGE_FONT_SIZE = "devotion-font-size";
 const STORAGE_SCRIPTURE_SIZE = "devotion-scripture-size";
 const STORAGE_MUSIC_ID = "devotion-music-id";
+const STORAGE_BIBLE_ID = "devotion-bible-id";
+
+// 常見的中文 Bible ID（用戶可根據 API.Bible 儀表板中的可用版本選擇）
+const BIBLE_ID_OPTIONS = [
+  { id: "04fb2bec0d582d1f-01", label: "免費易讀聖經（新約）" },
+  { id: "7ea794434e9ea7ee-01", label: "中文和合本（CUV）" },
+  { id: "9879d2657fe39de4-01", label: "中文標準譯本（CSB）" },
+];
 
 declare global {
   interface Window {
@@ -175,6 +183,9 @@ export default function DevotionPage() {
   const [fontSize, setFontSize] = useState("medium");
   const [scriptureSize, setScriptureSize] = useState("medium");
   const [musicId, setMusicId] = useState(DEFAULT_MUSIC_ID);
+  const [bibleId, setBibleId] = useState(
+    process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "04fb2bec0d582d1f-01"
+  );
   const [panelOpen, setPanelOpen] = useState(false);
   const [records, setRecords] = useState<DevotionRecord[]>([]);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
@@ -189,11 +200,15 @@ export default function DevotionPage() {
       const storedSize = localStorage.getItem(STORAGE_FONT_SIZE);
       const storedScriptureSize = localStorage.getItem(STORAGE_SCRIPTURE_SIZE);
       const storedMusicId = localStorage.getItem(STORAGE_MUSIC_ID);
+      const storedBibleId = localStorage.getItem(STORAGE_BIBLE_ID);
       if (storedFont) setFontFamily(storedFont);
       if (storedSize) setFontSize(storedSize);
       if (storedScriptureSize) setScriptureSize(storedScriptureSize);
       if (storedMusicId && MUSIC_OPTIONS.some(m => m.id === storedMusicId)) {
         setMusicId(storedMusicId);
+      }
+      if (storedBibleId) {
+        setBibleId(storedBibleId);
       }
     } catch (_) {}
   }, []);
@@ -248,8 +263,9 @@ export default function DevotionPage() {
       localStorage.setItem(STORAGE_FONT_SIZE, fontSize);
       localStorage.setItem(STORAGE_SCRIPTURE_SIZE, scriptureSize);
       localStorage.setItem(STORAGE_MUSIC_ID, musicId);
+      localStorage.setItem(STORAGE_BIBLE_ID, bibleId);
     } catch (_) {}
-  }, [fontFamily, fontSize, scriptureSize, musicId]);
+  }, [fontFamily, fontSize, scriptureSize, musicId, bibleId]);
 
   const scriptureSizeClass =
     SCRIPTURE_SIZE_OPTIONS.find((s) => s.id === scriptureSize)?.className ??
@@ -359,9 +375,7 @@ export default function DevotionPage() {
   const loadScripture = useCallback(async () => {
     const book = BIBLE_BOOKS[bookIndex];
     const apiKey = process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY;
-    // 使用可用的中文版本（免費易讀聖經）
-    const bibleId =
-      process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "04fb2bec0d582d1f-01";
+    // 使用用戶選擇的 Bible ID（或環境變數，或預設值）
     if (!apiKey) {
       setScriptureError("請在環境變數設定 NEXT_PUBLIC_SCRIPTURE_API_KEY（至 https://scripture.api.bible 申請）");
       return;
@@ -403,10 +417,18 @@ export default function DevotionPage() {
           }
           if (res.status === 404) {
             const errorMsg = err.error?.message || `找不到章節`;
+            const isOldTestament = bookIndex < 39; // 舊約書卷索引通常 < 39
             throw new Error(
               `${errorMsg} (404)\n` +
-              `該 Bible 版本可能沒有 ${book.name} ${chapter} 章\n` +
-              `建議：嘗試新約書卷（如約翰福音、馬太福音）或改用其他中文版本`
+              `目前使用的 Bible ID: ${bibleId}\n` +
+              `該版本可能沒有 ${book.name} ${chapter} 章\n\n` +
+              `建議：\n` +
+              (isOldTestament 
+                ? `1. 在設定中切換到包含舊約的版本（如「中文和合本」）\n` +
+                  `2. 或嘗試新約書卷（如約翰福音、馬太福音）\n` +
+                  `3. 或使用 Bible Gateway 載入功能`
+                : `1. 在設定中切換到其他中文版本\n` +
+                  `2. 或使用 Bible Gateway 載入功能`)
             );
           }
           throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
@@ -440,10 +462,18 @@ export default function DevotionPage() {
           }
           if (res.status === 404) {
             const errorMsg = err.error?.message || `找不到經文段落`;
+            const isOldTestament = bookIndex < 39;
             throw new Error(
               `${errorMsg} (404)\n` +
-              `該 Bible 版本可能沒有此經文段落\n` +
-              `建議：嘗試新約書卷或改用其他中文版本`
+              `目前使用的 Bible ID: ${bibleId}\n` +
+              `該版本可能沒有此經文段落\n\n` +
+              `建議：\n` +
+              (isOldTestament 
+                ? `1. 在設定中切換到包含舊約的版本（如「中文和合本」）\n` +
+                  `2. 或嘗試新約書卷\n` +
+                  `3. 或使用 Bible Gateway 載入功能`
+                : `1. 在設定中切換到其他中文版本\n` +
+                  `2. 或使用 Bible Gateway 載入功能`)
             );
           }
           throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
@@ -468,7 +498,7 @@ export default function DevotionPage() {
     } finally {
       setScriptureLoading(false);
     }
-  }, [bookIndex, chapter, verseFrom, verseTo]);
+  }, [bookIndex, chapter, verseFrom, verseTo, bibleId]);
 
   const startDevotion = useCallback(() => {
     setPhase("prayer");
@@ -612,6 +642,26 @@ export default function DevotionPage() {
                   ))}
                 </select>
               </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-quiet)] text-sm">Bible 版本</span>
+                <select
+                  value={bibleId}
+                  onChange={(e) => setBibleId(e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
+                >
+                  {BIBLE_ID_OPTIONS.map((b) => (
+                    <option key={b.id} value={b.id}>{b.label}</option>
+                  ))}
+                  <option value={bibleId}>
+                    {BIBLE_ID_OPTIONS.find(b => b.id === bibleId) ? "" : `自訂: ${bibleId}`}
+                  </option>
+                </select>
+              </label>
+              {!BIBLE_ID_OPTIONS.find(b => b.id === bibleId) && (
+                <p className="text-[var(--accent-subtle)] text-xs mt-1">
+                  目前使用自訂 Bible ID。如需新增選項，請在 API.Bible 儀表板確認可用的版本。
+                </p>
+              )}
             </div>
           </section>
           <section>
