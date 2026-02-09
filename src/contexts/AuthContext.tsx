@@ -60,15 +60,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) return;
     setLoading(true);
     try {
-      // 手機瀏覽器也嘗試使用 popup，若失敗再改用 redirect
+      // Safari 和大部分瀏覽器都優先使用 popup（避免 sessionStorage 問題）
+      // 只有當 popup 被明確阻擋時才改用 redirect
       try {
         await signInWithPopup(auth, googleProvider);
         setLoading(false);
       } catch (popupError: any) {
-        // Popup 被阻擋或失敗時，改用 redirect
-        if (popupError.code === 'auth/popup-blocked' || popupError.code === 'auth/popup-closed-by-user') {
+        // Popup 被阻擋時，改用 redirect（但 Safari 可能仍有 sessionStorage 問題）
+        if (popupError.code === 'auth/popup-blocked') {
+          console.warn("彈出視窗被阻擋，改用重新導向。若在 Safari 上失敗，請允許彈出視窗。");
           await signInWithRedirect(auth, googleProvider);
           // redirect 不會立即返回，所以不設定 loading=false
+        } else if (popupError.code === 'auth/popup-closed-by-user') {
+          // 用戶關閉彈出視窗，不視為錯誤
+          setLoading(false);
         } else {
           throw popupError;
         }
@@ -76,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("登入失敗", err);
       setLoading(false);
+      alert("登入失敗。若使用 Safari，請允許彈出視窗，或嘗試使用 Chrome 瀏覽器。");
     }
   }, []);
 
