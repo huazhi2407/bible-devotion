@@ -262,13 +262,14 @@ export default function DevotionPage() {
   const loadScripture = useCallback(async () => {
     const book = BIBLE_BOOKS[bookIndex];
     const apiKey = process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY;
-    // 使用可用的中文版本（簡體當代譯本 2022）
+    // 使用可用的中文版本（免費易讀聖經）
     const bibleId =
-      process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "7ea794434e9ea7ee-01";
+      process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "04fb2bec0d582d1f-01";
     if (!apiKey) {
       setScriptureError("請在環境變數設定 NEXT_PUBLIC_SCRIPTURE_API_KEY（至 https://scripture.api.bible 申請）");
       return;
     }
+    console.log("使用 Bible ID:", bibleId);
     const from = verseFrom.trim() ? parseInt(verseFrom.trim(), 10) : 0;
     const to = verseTo.trim() ? parseInt(verseTo.trim(), 10) : 0;
     const useRange = from > 0;
