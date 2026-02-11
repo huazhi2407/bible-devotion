@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BIBLE_BOOKS } from "@/data/bibleBooks";
 import { loadRecords, saveRecords, formatRecordDate, type DevotionRecord } from "@/lib/devotion";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -32,8 +31,6 @@ const DEFAULT_SCRIPTURE = {
   text: "你們要休息，要知道我是神；我必在外邦中被尊崇，在遍地上也被尊崇。",
 };
 
-const API_BASE = "https://rest.api.bible/v1";
-
 const FONT_OPTIONS: { id: string; label: string; value: string }[] = [
   { id: "serif", label: "襯線（預設）", value: "Georgia, Cambria, \"Times New Roman\", serif" },
   { id: "sans", label: "黑體", value: "\"Microsoft JhengHei\", \"PingFang TC\", \"Helvetica Neue\", sans-serif" },
@@ -57,13 +54,6 @@ const STORAGE_FONT = "devotion-font";
 const STORAGE_FONT_SIZE = "devotion-font-size";
 const STORAGE_SCRIPTURE_SIZE = "devotion-scripture-size";
 const STORAGE_MUSIC_ID = "devotion-music-id";
-const STORAGE_BIBLE_ID = "devotion-bible-id";
-
-// 常見的中文 Bible ID（用戶可根據 API.Bible 儀表板中的可用版本選擇）
-const BIBLE_ID_OPTIONS = [
-  { id: "04fb2bec0d582d1f-01", label: "免費易讀聖經（新約）" },
-  { id: "7ea794434e9ea7ee-01", label: "中文和合本（CUV）" },
-];
 
 declare global {
   interface Window {
@@ -167,13 +157,6 @@ function useYouTubeBackgroundMusic(isPlaying: boolean, videoId: string) {
 export default function DevotionPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [todayScripture, setTodayScripture] = useState(DEFAULT_SCRIPTURE);
-  const [bookIndex, setBookIndex] = useState(18); // 詩篇
-  const [chapter, setChapter] = useState(46);
-  const [verseFrom, setVerseFrom] = useState<string>(""); // 起始節，空＝整章
-  const [verseTo, setVerseTo] = useState<string>(""); // 結束節
-  const [scriptureLoading, setScriptureLoading] = useState(false);
-  const [scriptureError, setScriptureError] = useState<string | null>(null);
-  const [showApiSelector, setShowApiSelector] = useState(false);
   const [observation, setObservation] = useState("");
   const [application, setApplication] = useState("");
   const [prayerText, setPrayerText] = useState("");
@@ -181,9 +164,6 @@ export default function DevotionPage() {
   const [fontSize, setFontSize] = useState("medium");
   const [scriptureSize, setScriptureSize] = useState("medium");
   const [musicId, setMusicId] = useState(DEFAULT_MUSIC_ID);
-  const [bibleId, setBibleId] = useState(
-    process.env.NEXT_PUBLIC_SCRIPTURE_BIBLE_ID || "04fb2bec0d582d1f-01"
-  );
   const [panelOpen, setPanelOpen] = useState(false);
   const [records, setRecords] = useState<DevotionRecord[]>([]);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
@@ -198,15 +178,11 @@ export default function DevotionPage() {
       const storedSize = localStorage.getItem(STORAGE_FONT_SIZE);
       const storedScriptureSize = localStorage.getItem(STORAGE_SCRIPTURE_SIZE);
       const storedMusicId = localStorage.getItem(STORAGE_MUSIC_ID);
-      const storedBibleId = localStorage.getItem(STORAGE_BIBLE_ID);
       if (storedFont) setFontFamily(storedFont);
       if (storedSize) setFontSize(storedSize);
       if (storedScriptureSize) setScriptureSize(storedScriptureSize);
       if (storedMusicId && MUSIC_OPTIONS.some(m => m.id === storedMusicId)) {
         setMusicId(storedMusicId);
-      }
-      if (storedBibleId) {
-        setBibleId(storedBibleId);
       }
     } catch (_) {}
   }, []);
@@ -261,170 +237,12 @@ export default function DevotionPage() {
       localStorage.setItem(STORAGE_FONT_SIZE, fontSize);
       localStorage.setItem(STORAGE_SCRIPTURE_SIZE, scriptureSize);
       localStorage.setItem(STORAGE_MUSIC_ID, musicId);
-      localStorage.setItem(STORAGE_BIBLE_ID, bibleId);
     } catch (_) {}
-  }, [fontFamily, fontSize, scriptureSize, musicId, bibleId]);
+  }, [fontFamily, fontSize, scriptureSize, musicId]);
 
   const scriptureSizeClass =
     SCRIPTURE_SIZE_OPTIONS.find((s) => s.id === scriptureSize)?.className ??
     "text-xl md:text-2xl";
-
-  const selectedBook = BIBLE_BOOKS[bookIndex];
-  const chapterOptions = selectedBook
-    ? Array.from({ length: selectedBook.chapters }, (_, i) => i + 1)
-    : [];
-
-  const loadScripture = useCallback(async () => {
-    const book = BIBLE_BOOKS[bookIndex];
-    const apiKey = process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY;
-    // 使用用戶選擇的 Bible ID（或環境變數，或預設值）
-    if (!apiKey) {
-      setScriptureError("請在環境變數設定 NEXT_PUBLIC_SCRIPTURE_API_KEY（至 https://scripture.api.bible 申請）");
-      return;
-    }
-    console.log("使用 Bible ID:", bibleId);
-    console.log("請求章節:", `${book.id}.${chapter}`);
-    const from = verseFrom.trim() ? parseInt(verseFrom.trim(), 10) : 0;
-    const to = verseTo.trim() ? parseInt(verseTo.trim(), 10) : 0;
-    const useRange = from > 0;
-    if (useRange && to > 0 && from > to) {
-      setScriptureError("起始節不可大於結束節");
-      return;
-    }
-    setScriptureError(null);
-    setScriptureLoading(true);
-    try {
-      let text: string;
-      let reference: string;
-      if (!useRange) {
-        const chapterId = `${book.id}.${chapter}`;
-        const res = await fetch(
-          `${API_BASE}/bibles/${bibleId}/chapters/${chapterId}?content-type=text&include-verse-numbers=false&include-chapter-numbers=false`,
-          { 
-            headers: { 
-              "api-key": apiKey.trim(),
-              "Accept": "application/json"
-            } 
-          }
-        );
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          if (res.status === 403) {
-            const defaultBibleId = "04fb2bec0d582d1f-01"; // 免費易讀聖經
-            const isUsingDefault = bibleId === defaultBibleId;
-            // 如果不是使用預設版本，自動切換回預設版本
-            if (!isUsingDefault) {
-              setBibleId(defaultBibleId);
-              localStorage.setItem(STORAGE_BIBLE_ID, defaultBibleId);
-            }
-            throw new Error(
-              `權限不足 (403)\n` +
-              `目前使用的 Bible ID: ${bibleId}\n` +
-              `您的 API Key 沒有權限存取此版本\n\n` +
-              (isUsingDefault 
-                ? `解決方法：\n` +
-                  `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
-                  `2. 或直接手動貼上經文`
-                : `已自動切換回「免費易讀聖經（新約）」，請重新載入經文。\n\n` +
-                  `若仍有問題，請在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入。`)
-            );
-          }
-          if (res.status === 404) {
-            const errorMsg = err.error?.message || `找不到章節`;
-            const isOldTestament = bookIndex < 39; // 舊約書卷索引通常 < 39
-            throw new Error(
-              `${errorMsg} (404)\n` +
-              `目前使用的 Bible ID: ${bibleId}\n` +
-              `該版本可能沒有 ${book.name} ${chapter} 章\n\n` +
-              `建議：\n` +
-              (isOldTestament 
-                ? `1. 在設定中切換到包含舊約的版本（如「中文和合本」）\n` +
-                  `2. 或嘗試新約書卷（如約翰福音、馬太福音）\n` +
-                  `3. 或直接手動貼上經文`
-                : `1. 在設定中切換到其他中文版本\n` +
-                  `2. 或直接手動貼上經文`)
-            );
-          }
-          throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
-        }
-        const data = await res.json();
-        text = (data?.data?.content ?? "").trim().replace(/\n{2,}/g, "\n");
-        reference = `${book.name} ${chapter}`;
-      } else {
-        const passageId =
-          to > 0 && to >= from
-            ? `${book.id}.${chapter}.${from}-${book.id}.${chapter}.${to}`
-            : `${book.id}.${chapter}.${from}`;
-        const res = await fetch(
-          `${API_BASE}/bibles/${bibleId}/passages/${passageId}?content-type=text&include-verse-numbers=false&include-chapter-numbers=false`,
-          { 
-            headers: { 
-              "api-key": apiKey.trim(),
-              "Accept": "application/json"
-            } 
-          }
-        );
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          if (res.status === 403) {
-            const defaultBibleId = "04fb2bec0d582d1f-01"; // 免費易讀聖經
-            const isUsingDefault = bibleId === defaultBibleId;
-            // 如果不是使用預設版本，自動切換回預設版本
-            if (!isUsingDefault) {
-              setBibleId(defaultBibleId);
-              localStorage.setItem(STORAGE_BIBLE_ID, defaultBibleId);
-            }
-            throw new Error(
-              `權限不足 (403)\n` +
-              `目前使用的 Bible ID: ${bibleId}\n` +
-              `您的 API Key 沒有權限存取此版本\n\n` +
-              (isUsingDefault 
-                ? `解決方法：\n` +
-                  `1. 請在 API.Bible 儀表板確認您的 API Key 可用的 Bible 版本\n` +
-                  `2. 或直接手動貼上經文`
-                : `已自動切換回「免費易讀聖經（新約）」，請重新載入經文。\n\n` +
-                  `若仍有問題，請在 API.Bible 儀表板確認您可用的 Bible ID，然後手動輸入。`)
-            );
-          }
-          if (res.status === 404) {
-            const errorMsg = err.error?.message || `找不到經文段落`;
-            const isOldTestament = bookIndex < 39;
-            throw new Error(
-              `${errorMsg} (404)\n` +
-              `目前使用的 Bible ID: ${bibleId}\n` +
-              `該版本可能沒有此經文段落\n\n` +
-              `建議：\n` +
-              (isOldTestament 
-                ? `1. 在設定中切換到包含舊約的版本（如「中文和合本」）\n` +
-                  `2. 或嘗試新約書卷\n` +
-                  `3. 或直接手動貼上經文`
-                : `1. 在設定中切換到其他中文版本\n` +
-                  `2. 或直接手動貼上經文`)
-            );
-          }
-          throw new Error(err.error?.message || `經文載入失敗 (${res.status})`);
-        }
-        const data = await res.json();
-        const raw =
-          data?.data?.content ??
-          (typeof data?.data?.passages !== "undefined" && data.data.passages[0]?.content) ??
-          "";
-        text = String(raw).trim().replace(/\n{2,}/g, "\n");
-        reference =
-          to > 0 && to >= from
-            ? `${book.name} ${chapter}:${from}-${to}`
-            : `${book.name} ${chapter}:${from}`;
-      }
-      setTodayScripture({
-        reference,
-        text: text || "（此段無經文內容）",
-      });
-    } catch (e) {
-      setScriptureError(e instanceof Error ? e.message : "經文載入失敗");
-    } finally {
-      setScriptureLoading(false);
-    }
-  }, [bookIndex, chapter, verseFrom, verseTo, bibleId]);
 
   const startDevotion = useCallback(() => {
     setPhase("prayer");
@@ -568,26 +386,6 @@ export default function DevotionPage() {
                   ))}
                 </select>
               </label>
-              <label className="flex items-center justify-between gap-2">
-                <span className="text-[var(--text-quiet)] text-sm">Bible 版本</span>
-                <select
-                  value={bibleId}
-                  onChange={(e) => setBibleId(e.target.value)}
-                  className="px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
-                >
-                  {BIBLE_ID_OPTIONS.map((b) => (
-                    <option key={b.id} value={b.id}>{b.label}</option>
-                  ))}
-                  <option value={bibleId}>
-                    {BIBLE_ID_OPTIONS.find(b => b.id === bibleId) ? "" : `自訂: ${bibleId}`}
-                  </option>
-                </select>
-              </label>
-              {!BIBLE_ID_OPTIONS.find(b => b.id === bibleId) && (
-                <p className="text-[var(--accent-subtle)] text-xs mt-1">
-                  目前使用自訂 Bible ID。如需新增選項，請在 API.Bible 儀表板確認可用的版本。
-                </p>
-              )}
             </div>
           </section>
           <section>
@@ -693,87 +491,6 @@ export default function DevotionPage() {
               {todayScripture.text || "請在上方貼上經文出處與內容。"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowApiSelector((v) => !v)}
-            className="text-sm text-[var(--text-quiet)] underline mb-3"
-          >
-            {showApiSelector ? "收起" : "或用 API 依書卷／章／節載入"}
-          </button>
-          {showApiSelector && (
-            <div className="mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-white/50 space-y-3">
-              <div className="flex gap-2 mb-3">
-                <button
-                  type="button"
-                  onClick={loadScripture}
-                  disabled={scriptureLoading || !process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY}
-                  className="flex-1 px-4 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-[var(--bg-softer)] disabled:opacity-60"
-                  title={!process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY ? "需要設定 API Key" : ""}
-                >
-                  {scriptureLoading ? "載入中…" : "從 API.Bible 載入（需金鑰）"}
-                </button>
-              </div>
-              {!process.env.NEXT_PUBLIC_SCRIPTURE_API_KEY && (
-                <p className="text-[var(--accent-subtle)] text-xs">
-                  API.Bible 需要設定 NEXT_PUBLIC_SCRIPTURE_API_KEY。若無法使用 API，請直接手動貼上經文。
-                </p>
-              )}
-              <div className="flex flex-wrap gap-3">
-                <label className="flex-1 min-w-[100px]">
-                  <span className="sr-only">書卷</span>
-                  <select
-                    value={bookIndex}
-                    onChange={(e) => {
-                      const i = Number(e.target.value);
-                      setBookIndex(i);
-                      const maxCh = BIBLE_BOOKS[i].chapters;
-                      setChapter((c) => (c > maxCh ? maxCh : c));
-                    }}
-                    className="w-full px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm"
-                  >
-                    {BIBLE_BOOKS.map((b, i) => (
-                      <option key={b.id} value={i}>{b.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="w-20">
-                  <span className="sr-only">章</span>
-                  <select
-                    value={chapter}
-                    onChange={(e) => setChapter(Number(e.target.value))}
-                    className="w-full px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm"
-                  >
-                    {chapterOptions.map((ch) => (
-                      <option key={ch} value={ch}>{ch} 章</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="w-16">
-                  <input
-                    type="number"
-                    min={1}
-                    placeholder="節起"
-                    value={verseFrom}
-                    onChange={(e) => setVerseFrom(e.target.value)}
-                    className="w-full px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </label>
-                <label className="w-16">
-                  <input
-                    type="number"
-                    min={1}
-                    placeholder="節止"
-                    value={verseTo}
-                    onChange={(e) => setVerseTo(e.target.value)}
-                    className="w-full px-2 py-1.5 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </label>
-              </div>
-              {scriptureError && (
-                <p className="text-xs text-[var(--accent-subtle)]">{scriptureError}</p>
-              )}
-            </div>
-          )}
 
           <p className="text-[var(--text-quiet)] text-base mb-6 leading-relaxed text-center">
             先安靜片刻。準備好了再按開始。
