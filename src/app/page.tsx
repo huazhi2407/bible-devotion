@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loadRecords, saveRecords, formatRecordDate, type DevotionRecord } from "@/lib/devotion";
+import { loadRecords, saveRecords, formatRecordDate, normalizeScriptures, type DevotionRecord, type ScriptureVersion } from "@/lib/devotion";
 import { useAuth } from "@/contexts/AuthContext";
 
 type Phase =
@@ -26,7 +26,7 @@ const MUSIC_OPTIONS = [
 
 const DEFAULT_MUSIC_ID = MUSIC_OPTIONS[0].id;
 
-const DEFAULT_SCRIPTURE = {
+const DEFAULT_SCRIPTURE: ScriptureVersion = {
   reference: "詩篇 46:10",
   text: "你們要休息，要知道我是神；我必在外邦中被尊崇，在遍地上也被尊崇。",
 };
@@ -156,7 +156,7 @@ function useYouTubeBackgroundMusic(isPlaying: boolean, videoId: string) {
 
 export default function DevotionPage() {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [todayScripture, setTodayScripture] = useState(DEFAULT_SCRIPTURE);
+  const [todayScriptures, setTodayScriptures] = useState<ScriptureVersion[]>([DEFAULT_SCRIPTURE]);
   const [observation, setObservation] = useState("");
   const [application, setApplication] = useState("");
   const [prayerText, setPrayerText] = useState("");
@@ -196,7 +196,7 @@ export default function DevotionPage() {
     const record: DevotionRecord = {
       id: `devotion-${Date.now()}`,
       date: new Date().toISOString(),
-      scripture: { ...todayScripture },
+      scripture: todayScriptures.length === 1 ? todayScriptures[0] : todayScriptures,
       observation,
       application,
       prayerText,
@@ -209,12 +209,13 @@ export default function DevotionPage() {
       console.error("儲存失敗", err);
     } finally {
       setPhase("idle");
+      setTodayScriptures([DEFAULT_SCRIPTURE]);
       setObservation("");
       setApplication("");
       setPrayerText("");
       router.push("/records");
     }
-  }, [todayScripture, observation, application, prayerText, records, user?.uid, router]);
+  }, [todayScriptures, observation, application, prayerText, records, user?.uid, router]);
 
   const deleteRecord = useCallback(async (id: string) => {
     if (!confirm("確定要刪除此靈修記錄嗎？")) return;
@@ -409,7 +410,7 @@ export default function DevotionPage() {
                         className="flex-1 text-left px-3 py-2 text-sm text-[var(--text-soft)] hover:bg-[var(--border-soft)] transition-colors min-w-0"
                       >
                         <span className="text-[var(--accent-subtle)] block text-xs">{formatRecordDate(rec.date)}</span>
-                        <span className="font-medium">{rec.scripture.reference}</span>
+                        <span className="font-medium">{normalizeScriptures(rec.scripture).map((s, i) => s.reference || `版本 ${i + 1}`).join(" / ")}</span>
                       </button>
                       <button
                         type="button"
@@ -422,7 +423,15 @@ export default function DevotionPage() {
                     </div>
                     {expandedRecordId === rec.id && (
                       <div className="px-3 py-2 pt-0 border-t border-[var(--border-soft)] bg-white/50 text-sm text-[var(--text-quiet)] space-y-3 max-h-80 overflow-y-auto whitespace-pre-wrap">
-                        <p className="text-[var(--text-soft)]">{rec.scripture.text}</p>
+                        {normalizeScriptures(rec.scripture).map((scripture, index) => (
+                          <div key={index} className={index > 0 ? "pt-3 border-t border-[var(--border-soft)]" : ""}>
+                            <p className="text-[var(--accent-subtle)] text-xs mb-1">
+                              {normalizeScriptures(rec.scripture).length > 1 ? `版本 ${index + 1}` : "經文"}
+                            </p>
+                            <p className="text-[var(--text-soft)] font-medium text-sm mb-1">{scripture.reference || `版本 ${index + 1}`}</p>
+                            <p className="text-[var(--text-soft)]">{scripture.text}</p>
+                          </div>
+                        ))}
                         {rec.observation && <p><span className="text-[var(--accent-subtle)]">觀察：</span>{rec.observation}</p>}
                         {rec.application && <p><span className="text-[var(--accent-subtle)]">應用：</span>{rec.application}</p>}
                         {rec.prayerText && <p><span className="text-[var(--accent-subtle)]">禱告：</span>{rec.prayerText}</p>}
@@ -458,38 +467,73 @@ export default function DevotionPage() {
             </Link>
           </p>
           <p className="text-[var(--accent-subtle)] text-sm mb-3">
-            從任何聖經 app、網站或實體聖經複製經文，貼到下方即可。
+            從任何聖經 app、網站或實體聖經複製經文，貼到下方即可。可以添加多個版本進行對照。
           </p>
-          <div className="mb-4 space-y-2">
-            <input
-              type="text"
-              value={todayScripture.reference}
-              onChange={(e) =>
-                setTodayScripture((prev) => ({ ...prev, reference: e.target.value }))
-              }
-              placeholder="經文出處（例如：詩篇 46:10）"
-              className="w-full px-3 py-2 bg-[var(--bg-softer)] border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
-            />
-            <textarea
-              value={todayScripture.text}
-              onChange={(e) =>
-                setTodayScripture((prev) => ({ ...prev, text: e.target.value }))
-              }
-              placeholder="經文內容（直接貼上從 YouVersion、Bible.com 等複製的經文）"
-              rows={5}
-              className={`w-full px-3 py-2 bg-[var(--bg-softer)] border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)] ${scriptureSizeClass}`}
-            />
+          <div className="mb-4 space-y-4">
+            {todayScriptures.map((scripture, index) => (
+              <div key={index} className="space-y-2 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[var(--accent-subtle)] text-xs">版本 {index + 1}</span>
+                  {todayScriptures.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTodayScriptures((prev) => prev.filter((_, i) => i !== index));
+                      }}
+                      className="text-xs text-[var(--accent-subtle)] hover:text-red-600 underline"
+                    >
+                      刪除此版本
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={scripture.reference}
+                  onChange={(e) => {
+                    const updated = [...todayScriptures];
+                    updated[index] = { ...updated[index], reference: e.target.value };
+                    setTodayScriptures(updated);
+                  }}
+                  placeholder="經文出處（例如：詩篇 46:10）"
+                  className="w-full px-3 py-2 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
+                />
+                <textarea
+                  value={scripture.text}
+                  onChange={(e) => {
+                    const updated = [...todayScriptures];
+                    updated[index] = { ...updated[index], text: e.target.value };
+                    setTodayScriptures(updated);
+                  }}
+                  placeholder="經文內容（直接貼上從 YouVersion、Bible.com 等複製的經文）"
+                  rows={5}
+                  className={`w-full px-3 py-2 bg-white border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)] ${scriptureSizeClass}`}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setTodayScriptures((prev) => [...prev, { reference: "", text: "" }]);
+              }}
+              className="w-full px-4 py-2 rounded-sm border border-dashed border-[var(--border-soft)] text-[var(--text-quiet)] text-sm hover:bg-[var(--bg-softer)] hover:text-[var(--text-soft)] transition-colors"
+            >
+              + 新增版本
+            </button>
           </div>
           <div className="mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)]">
-            <p className="text-[var(--accent-subtle)] text-xs mb-1">
+            <p className="text-[var(--accent-subtle)] text-xs mb-2">
               即將默想的經文
             </p>
-            <p className="text-[var(--text-soft)] font-medium text-sm">
-              {todayScripture.reference || "—"}
-            </p>
-            <p className={`text-[var(--text-quiet)] mt-1 line-clamp-2 ${scriptureSizeClass}`}>
-              {todayScripture.text || "請在上方貼上經文出處與內容。"}
-            </p>
+            {todayScriptures.map((scripture, index) => (
+              <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
+                <p className="text-[var(--text-soft)] font-medium text-sm">
+                  {scripture.reference || "—"}
+                </p>
+                <p className={`text-[var(--text-quiet)] mt-1 line-clamp-2 ${scriptureSizeClass}`}>
+                  {scripture.text || "請在上方貼上經文出處與內容。"}
+                </p>
+              </div>
+            ))}
           </div>
 
           <p className="text-[var(--text-quiet)] text-base mb-6 leading-relaxed text-center">
@@ -572,13 +616,17 @@ export default function DevotionPage() {
               ← 返回靜默
             </button>
           </p>
-          <p className="text-[var(--accent-subtle)] text-sm mb-6">
-            {todayScripture.reference}
-          </p>
-          <div className="max-h-[60vh] overflow-y-auto pr-2">
-            <p className={`${scriptureSizeClass} leading-relaxed text-[var(--text-soft)] font-normal`}>
-              {todayScripture.text}
-            </p>
+          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-6">
+            {todayScriptures.map((scripture, index) => (
+              <div key={index} className={index > 0 ? "pt-6 border-t border-[var(--border-soft)]" : ""}>
+                <p className="text-[var(--accent-subtle)] text-sm mb-4">
+                  {scripture.reference || `版本 ${index + 1}`}
+                </p>
+                <p className={`${scriptureSizeClass} leading-relaxed text-[var(--text-soft)] font-normal`}>
+                  {scripture.text}
+                </p>
+              </div>
+            ))}
           </div>
           <button
             onClick={() => setPhase("observation")}
@@ -592,9 +640,13 @@ export default function DevotionPage() {
       {phase === "observation" && (
         <section className="w-full max-w-4xl flex gap-6 animate-fade-in">
           <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-8 hidden md:block max-h-[70vh] overflow-y-auto">
-            <p className="text-[var(--accent-subtle)] text-xs mb-1">今日經文</p>
-            <p className="text-[var(--text-soft)] font-medium text-sm">{todayScripture.reference}</p>
-            <p className="text-[var(--text-quiet)] text-sm mt-2 leading-relaxed">{todayScripture.text}</p>
+            <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
+            {todayScriptures.map((scripture, index) => (
+              <div key={index} className={index > 0 ? "mt-4 pt-4 border-t border-[var(--border-soft)]" : ""}>
+                <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
+                <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+              </div>
+            ))}
           </aside>
           <div className="flex-1 min-w-0">
             <p className="mb-4">
@@ -607,9 +659,13 @@ export default function DevotionPage() {
               </button>
             </p>
             <div className="md:hidden mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] max-h-40 overflow-y-auto">
-              <p className="text-[var(--accent-subtle)] text-xs mb-1">今日經文</p>
-              <p className="text-[var(--text-soft)] font-medium text-sm">{todayScripture.reference}</p>
-              <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{todayScripture.text}</p>
+              <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
+              {todayScriptures.map((scripture, index) => (
+                <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
+                  <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
+                  <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                </div>
+              ))}
             </div>
             <p className="text-[var(--accent-subtle)] text-sm mb-2">觀察</p>
             <p className="text-[var(--text-quiet)] text-base mb-4">
@@ -635,9 +691,13 @@ export default function DevotionPage() {
       {phase === "application" && (
         <section className="w-full max-w-4xl flex gap-6 animate-fade-in">
           <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-8 hidden md:block max-h-[70vh] overflow-y-auto">
-            <p className="text-[var(--accent-subtle)] text-xs mb-1">今日經文</p>
-            <p className="text-[var(--text-soft)] font-medium text-sm">{todayScripture.reference}</p>
-            <p className="text-[var(--text-quiet)] text-sm mt-2 leading-relaxed">{todayScripture.text}</p>
+            <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
+            {todayScriptures.map((scripture, index) => (
+              <div key={index} className={index > 0 ? "mt-4 pt-4 border-t border-[var(--border-soft)]" : ""}>
+                <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
+                <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+              </div>
+            ))}
           </aside>
           <div className="flex-1 min-w-0">
             <p className="mb-4">
@@ -650,9 +710,13 @@ export default function DevotionPage() {
               </button>
             </p>
             <div className="md:hidden mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] max-h-40 overflow-y-auto">
-              <p className="text-[var(--accent-subtle)] text-xs mb-1">今日經文</p>
-              <p className="text-[var(--text-soft)] font-medium text-sm">{todayScripture.reference}</p>
-              <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{todayScripture.text}</p>
+              <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
+              {todayScriptures.map((scripture, index) => (
+                <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
+                  <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
+                  <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                </div>
+              ))}
             </div>
             <p className="text-[var(--accent-subtle)] text-sm mb-2">應用</p>
             <p className="text-[var(--text-quiet)] text-base mb-4">
@@ -678,9 +742,13 @@ export default function DevotionPage() {
       {phase === "prayer-write" && (
         <section className="w-full max-w-4xl flex gap-6 animate-fade-in">
           <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-8 hidden md:block max-h-[70vh] overflow-y-auto">
-            <p className="text-[var(--accent-subtle)] text-xs mb-1">今日經文</p>
-            <p className="text-[var(--text-soft)] font-medium text-sm">{todayScripture.reference}</p>
-            <p className="text-[var(--text-quiet)] text-sm mt-2 leading-relaxed">{todayScripture.text}</p>
+            <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
+            {todayScriptures.map((scripture, index) => (
+              <div key={index} className={index > 0 ? "mt-4 pt-4 border-t border-[var(--border-soft)]" : ""}>
+                <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
+                <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+              </div>
+            ))}
           </aside>
           <div className="flex-1 min-w-0">
             <p className="mb-4">
@@ -693,9 +761,13 @@ export default function DevotionPage() {
               </button>
             </p>
             <div className="md:hidden mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] max-h-40 overflow-y-auto">
-              <p className="text-[var(--accent-subtle)] text-xs mb-1">今日經文</p>
-              <p className="text-[var(--text-soft)] font-medium text-sm">{todayScripture.reference}</p>
-              <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{todayScripture.text}</p>
+              <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
+              {todayScriptures.map((scripture, index) => (
+                <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
+                  <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
+                  <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                </div>
+              ))}
             </div>
             <p className="text-[var(--accent-subtle)] text-sm mb-2">禱告</p>
             <p className="text-[var(--text-quiet)] text-base mb-4">

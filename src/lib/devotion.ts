@@ -11,10 +11,15 @@ import { db } from "./firebase";
 
 export const STORAGE_RECORDS = "devotion-records";
 
+export type ScriptureVersion = {
+  reference: string;
+  text: string;
+};
+
 export type DevotionRecord = {
   id: string;
   date: string;
-  scripture: { reference: string; text: string };
+  scripture: ScriptureVersion | ScriptureVersion[]; // 支持單一或數組，向後兼容
   observation: string;
   application: string;
   prayerText: string;
@@ -79,6 +84,11 @@ export async function saveRecordsFirestore(
     }
     throw err;
   }
+}
+
+/** 將 scripture 標準化為數組格式（向後兼容） */
+export function normalizeScriptures(scripture: ScriptureVersion | ScriptureVersion[]): ScriptureVersion[] {
+  return Array.isArray(scripture) ? scripture : [scripture];
 }
 
 export function formatRecordDate(iso: string) {

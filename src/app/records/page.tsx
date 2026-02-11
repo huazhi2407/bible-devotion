@@ -7,6 +7,7 @@ import {
   saveRecords,
   formatRecordDate,
   isToday,
+  normalizeScriptures,
   type DevotionRecord,
 } from "@/lib/devotion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -40,7 +41,7 @@ function RecordsList({
                 {formatRecordDate(rec.date)}
               </span>
               <span className="font-medium text-[var(--text-soft)]">
-                {rec.scripture.reference}
+                {normalizeScriptures(rec.scripture).map((s, i) => s.reference || `版本 ${i + 1}`).join(" / ")}
               </span>
             </button>
             <button
@@ -55,10 +56,15 @@ function RecordsList({
           </div>
           {expandedId === rec.id && (
             <div className="px-4 py-3 pt-0 border-t border-[var(--border-soft)] bg-[var(--bg-softer)] text-sm text-[var(--text-quiet)] space-y-3 max-h-96 overflow-y-auto whitespace-pre-wrap">
-              <div>
-                <p className="text-[var(--accent-subtle)] text-xs mb-1">經文</p>
-                <p className="text-[var(--text-soft)]">{rec.scripture.text}</p>
-              </div>
+              {normalizeScriptures(rec.scripture).map((scripture, index) => (
+                <div key={index} className={index > 0 ? "pt-3 border-t border-[var(--border-soft)]" : ""}>
+                  <p className="text-[var(--accent-subtle)] text-xs mb-1">
+                    經文{normalizeScriptures(rec.scripture).length > 1 ? ` (版本 ${index + 1})` : ""}
+                  </p>
+                  <p className="text-[var(--text-soft)] font-medium text-sm mb-1">{scripture.reference || `版本 ${index + 1}`}</p>
+                  <p className="text-[var(--text-soft)]">{scripture.text}</p>
+                </div>
+              ))}
               {rec.observation && (
                 <div>
                   <p className="text-[var(--accent-subtle)] text-xs mb-1">觀察</p>
