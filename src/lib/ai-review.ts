@@ -162,19 +162,21 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error("未設定 GEMINI_API_KEY");
   }
 
-  // 嘗試多個模型名稱，按優先順序（免費 API 支援的模型）
-  const models = [
-    "gemini-pro",        // 標準免費模型
-    "gemini-1.5-pro",   // Gemini 1.5 Pro
-    "gemini-1.5-flash",  // Gemini 1.5 Flash
+  // 嘗試多個模型名稱和 API 版本組合（優先使用 v1，因為更穩定）
+  const modelConfigs = [
+    { model: "gemini-pro", version: "v1" },
+    { model: "gemini-1.5-pro", version: "v1" },
+    { model: "gemini-1.5-flash", version: "v1" },
+    { model: "gemini-pro", version: "v1beta" },
+    { model: "gemini-1.5-pro", version: "v1beta" },
   ];
 
   let lastError: Error | null = null;
 
-  for (const model of models) {
+  for (const config of modelConfigs) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/${config.version}/models/${config.model}:generateContent?key=${apiKey}`,
         {
           method: "POST",
           headers: {
@@ -230,8 +232,20 @@ async function callGemini(prompt: string): Promise<string> {
         
         // 如果是模型不存在的錯誤，嘗試下一個模型
         if (errorMessage.includes("not found") || errorMessage.includes("not supported")) {
-          lastError = new Error(`模型 ${model} 不可用: ${errorMessage}`);
+          lastError = new Error(`模型 ${config.model} (${config.version}) 不可用: ${errorMessage}`);
           continue; // 嘗試下一個模型
+        }
+        
+        // 如果是 API 未啟用的錯誤
+        if (errorMessage.includes("API has not been used") || errorMessage.includes("not enabled")) {
+          throw new Error(
+            `Gemini API 尚未啟用。\n\n` +
+            `請前往 Google Cloud Console 啟用 Gemini API：\n` +
+            `1. 前往 https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com\n` +
+            `2. 選擇你的專案（Default Gemini Project）\n` +
+            `3. 點擊「啟用」按鈕\n` +
+            `4. 等待幾分鐘後重新嘗試`
+          );
         }
         
         throw new Error(`Gemini API 錯誤: ${errorMessage}`);
@@ -260,10 +274,32 @@ async function callGemini(prompt: string): Promise<string> {
     }
   }
 
+  // 所有模型都失敗了，嘗試調用 listModels 來查看可用模型
+  try {
+    const listResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    );
+    if (listResponse.ok) {
+      const listData = await listResponse.json();
+      const availableModels = listData.models?.map((m: any) => m.name?.replace("models/", "")).filter(Boolean) || [];
+      throw new Error(
+        `所有嘗試的 Gemini 模型都無法使用。\n\n` +
+        `可用的模型列表：${availableModels.length > 0 ? availableModels.join(", ") : "無法取得"}\n\n` +
+        `最後的錯誤：${lastError?.message || "未知錯誤"}\n\n` +
+        `請確認你的 API Key 是否正確，或前往 https://aistudio.google.com/ 查看可用的模型。`
+      );
+    }
+  } catch (listError) {
+    // 忽略 listModels 錯誤，使用原始錯誤訊息
+  }
+
   // 所有模型都失敗了
   throw new Error(
     `所有 Gemini 模型都無法使用。最後的錯誤：${lastError?.message || "未知錯誤"}\n\n` +
-    `請確認你的 API Key 是否正確，或檢查 Google AI Studio 查看可用的模型列表。`
+    `請確認：\n` +
+    `1. API Key 是否正確設定在 .env.local 檔案中\n` +
+    `2. 是否已重新啟動開發伺服器（npm run dev）\n` +
+    `3. 前往 https://aistudio.google.com/ 查看可用的模型和 API 狀態`
   );
 }
 
