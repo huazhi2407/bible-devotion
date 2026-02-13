@@ -11,6 +11,7 @@ import {
   getDateKey,
   type CheckInRecord,
 } from "@/lib/checkin";
+import CheckInCalendar from "@/components/CheckInCalendar";
 import {
   loadRecords,
   type DevotionRecord,
@@ -144,7 +145,7 @@ export default function CheckInPage() {
       )}
 
       {/* 簽到表單 */}
-      <section className="mb-8 p-6 rounded-sm border border-[var(--border-soft)] bg-white shadow-sm">
+      <section id="checkin-form" className="mb-8 p-6 rounded-sm border border-[var(--border-soft)] bg-white shadow-sm">
         <h2 className="text-lg font-medium text-[var(--text-soft)] mb-4">
           {isToday ? "今日簽到" : formatCheckInDate(selectedDate.toISOString())}
         </h2>
@@ -251,6 +252,23 @@ export default function CheckInPage() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* 簽到日曆 */}
+      <section className="mb-8 p-6 rounded-sm border border-[var(--border-soft)] bg-white shadow-sm">
+        <h2 className="text-lg font-medium text-[var(--text-soft)] mb-4">
+          簽到日曆
+        </h2>
+        <CheckInCalendar
+          checkIns={checkIns}
+          selectedDate={selectedDate}
+          onDateClick={(date) => {
+            setSelectedDate(date);
+            // 滾動到簽到表單
+            const formElement = document.getElementById("checkin-form");
+            formElement?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
       </section>
 
       {/* 最近簽到記錄 */}
