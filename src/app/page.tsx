@@ -458,12 +458,18 @@ export default function DevotionPage() {
           <h1 className="text-2xl font-normal text-[var(--text-soft)] mb-2 tracking-wide text-center">
             靈修
           </h1>
-          <p className="text-center mb-6">
+          <p className="text-center mb-6 space-x-4">
             <Link
               href="/records"
               className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)] underline"
             >
               查看靈修記錄
+            </Link>
+            <Link
+              href="/checkin"
+              className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)] underline"
+            >
+              每日簽到
             </Link>
           </p>
           <p className="text-[var(--accent-subtle)] text-sm mb-3">
