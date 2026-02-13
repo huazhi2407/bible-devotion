@@ -162,14 +162,38 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error("未設定 GEMINI_API_KEY");
   }
 
+  // 先嘗試獲取可用的模型列表
+  let availableModels: string[] = [];
+  try {
+    const listResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    );
+    if (listResponse.ok) {
+      const listData = await listResponse.json();
+      availableModels = (listData.models || [])
+        .map((m: any) => m.name?.replace("models/", ""))
+        .filter((name: string) => name && name.startsWith("gemini"))
+        .filter((name: string) => {
+          // 只保留支援 generateContent 的模型
+          const methods = listData.models.find((m: any) => m.name === `models/${name}`)?.supportedGenerationMethods || [];
+          return methods.includes("generateContent");
+        });
+      console.log("可用的 Gemini 模型:", availableModels);
+    }
+  } catch (listError) {
+    console.warn("無法獲取模型列表，將使用預設模型列表", listError);
+  }
+
+  // 如果獲取到可用模型，優先使用；否則使用預設列表
+  const defaultModels = ["gemini-pro", "gemini-1.5-pro", "gemini-1.5-flash"];
+  const modelsToTry = availableModels.length > 0 ? availableModels : defaultModels;
+
   // 嘗試多個模型名稱和 API 版本組合（優先使用 v1，因為更穩定）
-  const modelConfigs = [
-    { model: "gemini-pro", version: "v1" },
-    { model: "gemini-1.5-pro", version: "v1" },
-    { model: "gemini-1.5-flash", version: "v1" },
-    { model: "gemini-pro", version: "v1beta" },
-    { model: "gemini-1.5-pro", version: "v1beta" },
-  ];
+  const modelConfigs: Array<{ model: string; version: string }> = [];
+  for (const model of modelsToTry) {
+    modelConfigs.push({ model, version: "v1" });
+    modelConfigs.push({ model, version: "v1beta" });
+  }
 
   let lastError: Error | null = null;
 
@@ -274,32 +298,23 @@ async function callGemini(prompt: string): Promise<string> {
     }
   }
 
-  // 所有模型都失敗了，嘗試調用 listModels 來查看可用模型
-  try {
-    const listResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-    );
-    if (listResponse.ok) {
-      const listData = await listResponse.json();
-      const availableModels = listData.models?.map((m: any) => m.name?.replace("models/", "")).filter(Boolean) || [];
-      throw new Error(
-        `所有嘗試的 Gemini 模型都無法使用。\n\n` +
-        `可用的模型列表：${availableModels.length > 0 ? availableModels.join(", ") : "無法取得"}\n\n` +
-        `最後的錯誤：${lastError?.message || "未知錯誤"}\n\n` +
-        `請確認你的 API Key 是否正確，或前往 https://aistudio.google.com/ 查看可用的模型。`
-      );
-    }
-  } catch (listError) {
-    // 忽略 listModels 錯誤，使用原始錯誤訊息
-  }
-
   // 所有模型都失敗了
+  const errorDetails = availableModels.length > 0
+    ? `已嘗試的模型：${modelsToTry.join(", ")}\n可用的模型列表：${availableModels.join(", ")}`
+    : `已嘗試的模型：${modelsToTry.join(", ")}`;
+
   throw new Error(
-    `所有 Gemini 模型都無法使用。最後的錯誤：${lastError?.message || "未知錯誤"}\n\n` +
-    `請確認：\n` +
-    `1. API Key 是否正確設定在 .env.local 檔案中\n` +
-    `2. 是否已重新啟動開發伺服器（npm run dev）\n` +
-    `3. 前往 https://aistudio.google.com/ 查看可用的模型和 API 狀態`
+    `所有 Gemini 模型都無法使用。\n\n` +
+    `${errorDetails}\n\n` +
+    `最後的錯誤：${lastError?.message || "未知錯誤"}\n\n` +
+    `可能的解決方案：\n` +
+    `1. 確認 API Key 是否正確設定在 .env.local 檔案中\n` +
+    `2. 確認已在 Google Cloud Console 啟用 Gemini API：\n` +
+    `   https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com\n` +
+    `3. 確認已重新啟動開發伺服器（npm run dev）\n` +
+    `4. 前往 https://aistudio.google.com/ 查看可用的模型和 API 狀態\n` +
+    `5. 檢查 API Key 的配額和限制：\n` +
+    `   https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas`
   );
 }
 
