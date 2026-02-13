@@ -162,77 +162,109 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error("未設定 GEMINI_API_KEY");
   }
 
-  // 使用最新的 Gemini 1.5 Flash 模型（免費且快速）
-  const model = "gemini-1.5-flash";
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
+  // 嘗試多個模型名稱，按優先順序（免費 API 支援的模型）
+  const models = [
+    "gemini-pro",        // 標準免費模型
+    "gemini-1.5-pro",   // Gemini 1.5 Pro
+    "gemini-1.5-flash",  // Gemini 1.5 Flash
+  ];
+
+  let lastError: Error | null = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
               {
-                text: `你是一位溫暖、鼓勵的靈修導師，幫助信徒整理和回顧他們的靈修歷程。\n\n${prompt}`,
+                parts: [
+                  {
+                    text: `你是一位溫暖、鼓勵的靈修導師，幫助信徒整理和回顧他們的靈修歷程。\n\n${prompt}`,
+                  },
+                ],
               },
             ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2000,
-          topP: 0.95,
-          topK: 40,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-        ],
-      }),
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2000,
+              topP: 0.95,
+              topK: 40,
+            },
+            safetySettings: [
+              {
+                category: "HARM_CATEGORY_HARASSMENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE",
+              },
+              {
+                category: "HARM_CATEGORY_HATE_SPEECH",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE",
+              },
+              {
+                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE",
+              },
+              {
+                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE",
+              },
+            ],
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = "請求失敗";
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.error?.message || error.message || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        
+        // 如果是模型不存在的錯誤，嘗試下一個模型
+        if (errorMessage.includes("not found") || errorMessage.includes("not supported")) {
+          lastError = new Error(`模型 ${model} 不可用: ${errorMessage}`);
+          continue; // 嘗試下一個模型
+        }
+        
+        throw new Error(`Gemini API 錯誤: ${errorMessage}`);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!text) {
+        // 檢查是否有被安全設定阻擋
+        if (data.candidates?.[0]?.finishReason === "SAFETY") {
+          throw new Error("內容被安全設定阻擋，請調整提示詞");
+        }
+        throw new Error("無法生成回顧，請檢查 API 回應");
+      }
+      
+      // 成功，返回結果
+      return text;
+    } catch (error: any) {
+      // 如果不是模型不存在的錯誤，直接拋出
+      if (!error.message?.includes("not found") && !error.message?.includes("not supported")) {
+        throw error;
+      }
+      lastError = error;
+      // 繼續嘗試下一個模型
     }
+  }
+
+  // 所有模型都失敗了
+  throw new Error(
+    `所有 Gemini 模型都無法使用。最後的錯誤：${lastError?.message || "未知錯誤"}\n\n` +
+    `請確認你的 API Key 是否正確，或檢查 Google AI Studio 查看可用的模型列表。`
   );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let errorMessage = "請求失敗";
-    try {
-      const error = JSON.parse(errorText);
-      errorMessage = error.error?.message || error.message || errorMessage;
-    } catch {
-      errorMessage = errorText || errorMessage;
-    }
-    throw new Error(`Gemini API 錯誤: ${errorMessage}`);
-  }
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  
-  if (!text) {
-    // 檢查是否有被安全設定阻擋
-    if (data.candidates?.[0]?.finishReason === "SAFETY") {
-      throw new Error("內容被安全設定阻擋，請調整提示詞");
-    }
-    throw new Error("無法生成回顧，請檢查 API 回應");
-  }
-  
-  return text;
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
