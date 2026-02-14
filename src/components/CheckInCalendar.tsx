@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckInRecord, getDateKey, formatCheckInDate } from "@/lib/checkin";
+import { CheckInRecord, getDateKey, getDateKeyFromISO, formatCheckInDate } from "@/lib/checkin";
 
 type CalendarProps = {
   checkIns: CheckInRecord[];
@@ -29,8 +29,8 @@ export default function CheckInCalendar({
   // 創建簽到記錄的 Map，方便快速查找
   const checkInMap = new Map<string, CheckInRecord>();
   checkIns.forEach((checkIn) => {
-    const dateKey = getDateKey(new Date(checkIn.date));
-    checkInMap.set(dateKey, checkIn);
+    const dateKey = getDateKeyFromISO(checkIn.date);
+    if (dateKey) checkInMap.set(dateKey, checkIn);
   });
 
   // 生成日曆天數
@@ -162,7 +162,7 @@ export default function CheckInCalendar({
         {calendarDays.map(({ date, isCurrentMonth }, index) => {
           const status = getDateStatus(date);
           const dateKey = getDateKey(date);
-          const checkIn = checkInMap.get(dateKey);
+          const checkIn = dateKey ? checkInMap.get(dateKey) : undefined;
           const dayNumber = date.getDate();
 
           return (

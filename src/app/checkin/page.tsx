@@ -10,6 +10,7 @@ import {
   getCheckInForDate,
   formatCheckInDate,
   getDateKey,
+  getDateKeyFromISO,
   type CheckInRecord,
 } from "@/lib/checkin";
 import CheckInCalendar from "@/components/CheckInCalendar";
@@ -45,9 +46,10 @@ export default function CheckInPage() {
   const [reviewResult, setReviewResult] = useState<string | null>(null);
   const [reviewPeriod, setReviewPeriod] = useState<ReviewPeriod | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
 
-  // 初始載入 + 已登入時訂閱即時同步（手機/電腦任一端簽到會自動更新）
+  // 初始載入 + 已登入時訂閱即時同步
   useEffect(() => {
     if (authLoading) return;
     loadRecords(user?.uid ?? null).then(setDevotionRecords);
@@ -61,7 +63,7 @@ export default function CheckInPage() {
     }
   }, [user?.uid, authLoading]);
 
-  // 切回此分頁時重新拉取，確保看到最新同步
+  // 切回此分頁時重新拉取
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === "visible" && user?.uid) {
@@ -72,14 +74,34 @@ export default function CheckInPage() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [user?.uid]);
 
+  // 定期拉取（每 20 秒），避免即時訂閱失敗時仍能同步
+  useEffect(() => {
+    if (!user?.uid || typeof document === "undefined") return;
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadCheckIns(user.uid).then(setCheckIns);
+      }
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [user?.uid]);
+
   const handleSync = async () => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setSyncMessage("請先登入 Google 以同步");
+      setTimeout(() => setSyncMessage(null), 3000);
+      return;
+    }
     setSyncing(true);
+    setSyncMessage(null);
     try {
       const merged = await loadCheckIns(user.uid);
       setCheckIns(merged);
+      setSyncMessage(`已同步，共 ${merged.length} 筆`);
+      setTimeout(() => setSyncMessage(null), 3000);
     } catch (err) {
       console.error("同步失敗", err);
+      setSyncMessage("同步失敗，請檢查網路或稍後再試");
+      setTimeout(() => setSyncMessage(null), 4000);
     } finally {
       setSyncing(false);
     }
@@ -107,10 +129,7 @@ export default function CheckInPage() {
     setIsSubmitting(true);
     try {
       const dateKey = getDateKey(selectedDate);
-      const existingIndex = checkIns.findIndex((c) => {
-        const checkInDate = new Date(c.date);
-        return getDateKey(checkInDate) === dateKey;
-      });
+      const existingIndex = checkIns.findIndex((c) => getDateKeyFromISO(c.date) === dateKey);
 
       const checkIn: CheckInRecord = {
         id: existingIndex >= 0 ? checkIns[existingIndex].id : `checkin-${Date.now()}`,
@@ -172,21 +191,32 @@ export default function CheckInPage() {
         每日簽到
       </h1>
 
-      {user && (
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <p className="text-[var(--accent-subtle)] text-sm">
-            已以 Google 帳號登入，簽到記錄會與雲端同步
+      <div className="mb-6 space-y-2">
+        {user ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-[var(--accent-subtle)] text-sm">
+                已登入，簽到會同步到雲端（手機與電腦請用同一個 Google 帳號）
+              </p>
+              <button
+                type="button"
+                onClick={handleSync}
+                disabled={syncing}
+                className="px-3 py-1.5 text-sm rounded-sm border border-[var(--border-soft)] text-[var(--text-quiet)] hover:text-[var(--text-soft)] hover:bg-[var(--bg-softer)] disabled:opacity-50 transition-colors"
+              >
+                {syncing ? "同步中…" : "手動同步"}
+              </button>
+            </div>
+            {syncMessage && (
+              <p className="text-sm text-[var(--accent-subtle)]">{syncMessage}</p>
+            )}
+          </>
+        ) : (
+          <p className="text-[var(--text-quiet)] text-sm">
+            未登入時簽到只會存於本裝置。請在「設定與記錄」用 Google 登入，手機與電腦使用同一帳號即可雙向同步。
           </p>
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncing}
-            className="px-3 py-1.5 text-sm rounded-sm border border-[var(--border-soft)] text-[var(--text-quiet)] hover:text-[var(--text-soft)] hover:bg-[var(--bg-softer)] disabled:opacity-50 transition-colors"
-          >
-            {syncing ? "同步中…" : "手動同步"}
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 簽到表單 */}
       <section id="checkin-form" className="mb-8 p-6 rounded-sm border border-[var(--border-soft)] bg-white shadow-sm">

@@ -89,11 +89,12 @@ export function mergeCheckIns(
 ): CheckInRecord[] {
   const byDate = new Map<string, CheckInRecord>();
   for (const c of cloud) {
-    const key = getDateKey(new Date(c.date));
-    byDate.set(key, c);
+    const key = getDateKeyFromISO(c.date);
+    if (key) byDate.set(key, c);
   }
   for (const c of local) {
-    const key = getDateKey(new Date(c.date));
+    const key = getDateKeyFromISO(c.date);
+    if (!key) continue;
     const existing = byDate.get(key);
     if (!existing) {
       byDate.set(key, c);
@@ -216,10 +217,14 @@ export function getDateKey(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/** 從 ISO 字串取日期 key（用 UTC 的 YYYY-MM-DD），避免手機/電腦時區不同造成同一天變成兩筆 */
+export function getDateKeyFromISO(iso: string): string {
+  if (!iso) return "";
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : getDateKey(new Date(iso));
+}
+
 export function getCheckInForDate(checkIns: CheckInRecord[], date: Date = new Date()): CheckInRecord | null {
   const dateKey = getDateKey(date);
-  return checkIns.find((c) => {
-    const checkInDate = new Date(c.date);
-    return getDateKey(checkInDate) === dateKey;
-  }) || null;
+  return checkIns.find((c) => getDateKeyFromISO(c.date) === dateKey) || null;
 }
