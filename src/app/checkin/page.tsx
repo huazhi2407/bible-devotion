@@ -259,8 +259,8 @@ export default function CheckInPage() {
         </div>
 
         {reviewResult && (
-          <div className="mt-6 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)]">
-            <div className="flex items-center justify-between mb-2">
+          <div className="mt-6 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] flex flex-col max-h-[70vh]">
+            <div className="flex items-center justify-between p-4 pb-2 shrink-0">
               <h3 className="text-[var(--accent-subtle)] text-sm font-medium">
                 {reviewPeriod === "week" ? "本週回顧" : "本月回顧"}
               </h3>
@@ -271,7 +271,7 @@ export default function CheckInPage() {
                 關閉
               </button>
             </div>
-            <div className="text-[var(--text-soft)] text-sm whitespace-pre-wrap leading-relaxed">
+            <div className="p-4 pt-2 overflow-y-auto flex-1 min-h-0 text-[var(--text-soft)] text-sm whitespace-pre-wrap leading-relaxed">
               {reviewResult}
             </div>
           </div>
