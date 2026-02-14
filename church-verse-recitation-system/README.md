@@ -65,6 +65,8 @@ npm run build
 npm run start
 ```
 
+**部署注意（K8s / CI）**：請在 **`church-verse-recitation-system` 目錄內**執行 `npm run build`（不要從 repo 根目錄建置根專案）。建置時若未設定 `NEXT_PUBLIC_FIREBASE_*` 等環境變數，build 仍會完成，但上線後需在執行環境提供這些變數，前端登入與 Firestore 才會正常。
+
 ---
 
 本專案位於 `bible-devotion` 倉庫下的 `church-verse-recitation-system` 目錄。

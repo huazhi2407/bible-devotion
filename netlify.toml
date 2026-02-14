@@ -1,0 +1,6 @@
+# 建置目錄：從 church-verse-recitation-system 建置 Next.js
+[build]
+  base = "church-verse-recitation-system"
+
+[build.environment]
+  NODE_VERSION = "20"

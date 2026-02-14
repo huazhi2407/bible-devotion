@@ -11,18 +11,26 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+const hasConfig =
+  typeof firebaseConfig.apiKey === "string" && firebaseConfig.apiKey.length > 0;
+
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 
-if (getApps().length === 0) {
+if (hasConfig && getApps().length === 0) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-} else {
+} else if (getApps().length > 0) {
   app = getApps()[0] as FirebaseApp;
   auth = getAuth(app);
   db = getFirestore(app);
+} else {
+  // Build time without env: skip init so deploy/build does not throw invalid-api-key
+  app = undefined as unknown as FirebaseApp;
+  auth = undefined as unknown as Auth;
+  db = undefined as unknown as Firestore;
 }
 
 export { app, auth, db };
