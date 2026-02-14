@@ -260,22 +260,28 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {verse && todayContent && (
+      {verse && (
         <section className="rounded-2xl bg-[var(--card)] border border-white/10 p-6 space-y-4">
           <h2 className="font-semibold">錄音 + AI 感測簽到</h2>
           <p className="text-sm text-[var(--muted)]">
             錄音背誦經文，系統驗證通過後即可簽到。
           </p>
+          {!todayContent && (
+            <p className="text-amber-200/90 text-sm">本日經文尚未填寫，可先勾選「僅驗證第一節」測試。</p>
+          )}
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer select-none p-2 rounded-lg bg-white/5 border border-white/10 w-fit">
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
             <input
+              id="test-first-verse"
               type="checkbox"
               checked={testFirstVerseOnly}
               onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
-              className="rounded border-white/30 text-[var(--accent)]"
+              className="w-4 h-4 rounded border-2 border-amber-400 text-amber-500 focus:ring-amber-400"
             />
-            <span className="text-[var(--text)]">僅驗證第一節（測試用）</span>
-          </label>
+            <label htmlFor="test-first-verse" className="text-sm font-medium text-amber-200 cursor-pointer select-none">
+              僅驗證第一節（測試用）
+            </label>
+          </div>
 
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
@@ -317,6 +323,15 @@ export default function DashboardPage() {
                   placeholder="請輸入或貼上您背誦的經文內容後按「驗證背誦」"
                   className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[100px]"
                 />
+                <label className="mt-3 flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={testFirstVerseOnly}
+                    onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
+                    className="w-4 h-4 rounded border-2 border-amber-400 text-amber-500"
+                  />
+                  <span className="text-amber-200">僅驗證第一節（測試用）</span>
+                </label>
                 <button
                   type="button"
                   onClick={handleVerify}
