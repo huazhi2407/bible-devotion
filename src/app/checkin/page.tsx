@@ -212,9 +212,14 @@ export default function CheckInPage() {
             )}
           </>
         ) : (
-          <p className="text-[var(--text-quiet)] text-sm">
-            未登入時簽到只會存於本裝置。請在「設定與記錄」用 Google 登入，手機與電腦使用同一帳號即可雙向同步。
-          </p>
+          <>
+            <p className="text-[var(--text-quiet)] text-sm">
+              未登入時簽到只會存於本裝置。請在「設定與記錄」用 Google 登入，手機與電腦使用同一帳號即可雙向同步。
+            </p>
+            <p className="text-[var(--text-quiet)] text-xs mt-1">
+              若登入後仍無法同步，請確認專案已設定 Firebase（.env.local 六個變數）且 Firestore 規則已部署，詳見 FIREBASE_SETUP.md。
+            </p>
+          </>
         )}
       </div>
 

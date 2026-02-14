@@ -9,7 +9,7 @@ import {
   onSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, isFirebaseReady } from "./firebase";
 
 export const STORAGE_CHECKINS = "checkin-records";
 
@@ -41,13 +41,30 @@ export function saveCheckInsLocal(checkIns: CheckInRecord[]) {
 const FIRESTORE_CHECKIN_COLLECTION = "checkins";
 
 export async function loadCheckInsFirestore(uid: string): Promise<CheckInRecord[]> {
-  if (!db || typeof window === "undefined") return [];
+  if (typeof window === "undefined") return [];
+  isFirebaseReady();
+  if (!db) {
+    console.warn("Firebase 未初始化，請確認 .env.local 已設定 Firebase 變數");
+    return [];
+  }
   try {
     const col = collection(db, "users", uid, FIRESTORE_CHECKIN_COLLECTION);
     const q = query(col, orderBy("date", "desc"));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as CheckInRecord);
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === "failed-precondition" && err?.message?.includes("index")) {
+      try {
+        const col = collection(db, "users", uid, FIRESTORE_CHECKIN_COLLECTION);
+        const snap = await getDocs(col);
+        const list = snap.docs.map((d) => d.data() as CheckInRecord);
+        list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return list;
+      } catch (fallbackErr) {
+        console.error("載入 Firestore 簽到記錄失敗", fallbackErr);
+        throw fallbackErr;
+      }
+    }
     console.error("載入 Firestore 簽到記錄失敗", err);
     throw err;
   }
@@ -57,7 +74,12 @@ export async function saveCheckInsFirestore(
   uid: string,
   checkIns: CheckInRecord[]
 ): Promise<void> {
-  if (!db || typeof window === "undefined") return;
+  if (typeof window === "undefined") return;
+  isFirebaseReady();
+  if (!db) {
+    console.warn("Firebase 未初始化，無法寫入雲端");
+    return;
+  }
   try {
     const userCol = collection(db, "users", uid, FIRESTORE_CHECKIN_COLLECTION);
     for (const checkIn of checkIns) {
@@ -120,7 +142,9 @@ export function subscribeCheckIns(
   uid: string,
   onUpdate: (checkIns: CheckInRecord[]) => void
 ): Unsubscribe | null {
-  if (!db || typeof window === "undefined") return null;
+  if (typeof window === "undefined") return null;
+  isFirebaseReady();
+  if (!db) return null;
   try {
     const col = collection(db, "users", uid, FIRESTORE_CHECKIN_COLLECTION);
     const q = query(col, orderBy("date", "desc"));
