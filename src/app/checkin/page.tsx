@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   loadCheckIns,
   saveCheckIns,
+  subscribeCheckIns,
   getCheckInForDate,
   formatCheckInDate,
   getDateKey,
@@ -46,11 +47,30 @@ export default function CheckInPage() {
   const [syncing, setSyncing] = useState(false);
   const { user, loading: authLoading } = useAuth();
 
+  // 初始載入 + 已登入時訂閱即時同步（手機/電腦任一端簽到會自動更新）
   useEffect(() => {
     if (authLoading) return;
-    loadCheckIns(user?.uid ?? null).then(setCheckIns);
     loadRecords(user?.uid ?? null).then(setDevotionRecords);
+    loadCheckIns(user?.uid ?? null).then(setCheckIns);
+
+    if (user?.uid) {
+      const unsub = subscribeCheckIns(user.uid, setCheckIns);
+      return () => {
+        unsub?.();
+      };
+    }
   }, [user?.uid, authLoading]);
+
+  // 切回此分頁時重新拉取，確保看到最新同步
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && user?.uid) {
+        loadCheckIns(user.uid).then(setCheckIns);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user?.uid]);
 
   const handleSync = async () => {
     if (!user?.uid) return;

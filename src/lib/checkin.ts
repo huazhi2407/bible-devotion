@@ -6,7 +6,8 @@ import {
   deleteDoc,
   query,
   orderBy,
-  where,
+  onSnapshot,
+  type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -108,6 +109,37 @@ export function mergeCheckIns(
   return Array.from(byDate.values()).sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
+}
+
+/**
+ * 訂閱簽到記錄即時更新（另一裝置寫入時會自動同步到本頁）
+ * @returns 取消訂閱的函數
+ */
+export function subscribeCheckIns(
+  uid: string,
+  onUpdate: (checkIns: CheckInRecord[]) => void
+): Unsubscribe | null {
+  if (!db || typeof window === "undefined") return null;
+  try {
+    const col = collection(db, "users", uid, FIRESTORE_CHECKIN_COLLECTION);
+    const q = query(col, orderBy("date", "desc"));
+    return onSnapshot(
+      q,
+      (snap) => {
+        const cloud = snap.docs.map((d) => d.data() as CheckInRecord);
+        const local = loadCheckInsLocal();
+        const merged = mergeCheckIns(cloud, local);
+        if (merged.length > 0) saveCheckInsLocal(merged);
+        onUpdate(merged);
+      },
+      (err) => {
+        console.error("簽到即時同步錯誤", err);
+      }
+    );
+  } catch (err) {
+    console.error("訂閱簽到失敗", err);
+    return null;
+  }
 }
 
 /** 依登入狀態載入簽到記錄（已登入時會合併雲端與本機，確保多裝置同步） */
