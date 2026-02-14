@@ -79,22 +79,58 @@ export async function saveCheckInsFirestore(
   }
 }
 
-/** 依登入狀態載入簽到記錄 */
+/**
+ * 合併雲端與本機簽到記錄（以日期為 key，同一天只保留一筆，優先保留內容較完整或較新的）
+ */
+export function mergeCheckIns(
+  cloud: CheckInRecord[],
+  local: CheckInRecord[]
+): CheckInRecord[] {
+  const byDate = new Map<string, CheckInRecord>();
+  for (const c of cloud) {
+    const key = getDateKey(new Date(c.date));
+    byDate.set(key, c);
+  }
+  for (const c of local) {
+    const key = getDateKey(new Date(c.date));
+    const existing = byDate.get(key);
+    if (!existing) {
+      byDate.set(key, c);
+    } else {
+      const existingLen = (existing.mood || "").length + (existing.note || "").length;
+      const localLen = (c.mood || "").length + (c.note || "").length;
+      const localNewer = new Date(c.date).getTime() > new Date(existing.date).getTime();
+      if (localLen > existingLen || (localNewer && localLen >= existingLen)) {
+        byDate.set(key, c);
+      }
+    }
+  }
+  return Array.from(byDate.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+}
+
+/** 依登入狀態載入簽到記錄（已登入時會合併雲端與本機，確保多裝置同步） */
 export async function loadCheckIns(uid?: string | null): Promise<CheckInRecord[]> {
+  const local = loadCheckInsLocal();
   if (uid && db) {
     try {
       const cloud = await loadCheckInsFirestore(uid);
-      console.log(`從 Firestore 載入 ${cloud.length} 筆簽到記錄`);
-      return cloud;
+      const merged = mergeCheckIns(cloud, local);
+      if (merged.length > 0) {
+        saveCheckInsLocal(merged);
+      }
+      console.log(`簽到記錄已同步：雲端 ${cloud.length} 筆，本機 ${local.length} 筆，合併後 ${merged.length} 筆`);
+      return merged;
     } catch (err: any) {
       console.error("載入 Firestore 失敗，改用本機記錄", err);
-      if (err?.code === 'permission-denied') {
+      if (err?.code === "permission-denied") {
         console.warn("Firestore 權限被拒絕，請檢查 Firestore 規則是否已設定");
       }
-      return loadCheckInsLocal();
+      return local;
     }
   }
-  return loadCheckInsLocal();
+  return local;
 }
 
 /** 依登入狀態儲存簽到記錄 */

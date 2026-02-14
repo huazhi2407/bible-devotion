@@ -18,7 +18,7 @@ import {
 } from "firebase/auth";
 import { auth, googleProvider, isFirebaseReady } from "@/lib/firebase";
 import { loadRecordsLocal, saveRecordsFirestore, loadRecordsFirestore } from "@/lib/devotion";
-import { loadCheckInsLocal, saveCheckInsFirestore, loadCheckInsFirestore } from "@/lib/checkin";
+import { loadCheckInsLocal, saveCheckInsLocal, saveCheckInsFirestore, loadCheckInsFirestore, mergeCheckIns } from "@/lib/checkin";
 
 type AuthContextValue = {
   user: User | null;
@@ -30,10 +30,10 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// 同步本機記錄到 Firestore（僅在首次登入時執行一次）
+// 同步本機與雲端記錄（登入時合併兩邊資料，再寫回雲端與本機，確保多裝置一致）
 async function syncLocalToFirestore(uid: string) {
   try {
-    // 同步靈修記錄
+    // 靈修記錄：雲端為空時上傳本機
     const cloudRecords = await loadRecordsFirestore(uid);
     if (cloudRecords.length === 0) {
       const localRecords = loadRecordsLocal();
@@ -42,15 +42,15 @@ async function syncLocalToFirestore(uid: string) {
         console.log(`已將 ${localRecords.length} 筆本機靈修記錄同步至雲端`);
       }
     }
-    
-    // 同步簽到記錄
+
+    // 簽到記錄：合併雲端與本機後再寫回兩邊，實現多裝置同步
     const cloudCheckIns = await loadCheckInsFirestore(uid);
-    if (cloudCheckIns.length === 0) {
-      const localCheckIns = loadCheckInsLocal();
-      if (localCheckIns.length > 0) {
-        await saveCheckInsFirestore(uid, localCheckIns);
-        console.log(`已將 ${localCheckIns.length} 筆本機簽到記錄同步至雲端`);
-      }
+    const localCheckIns = loadCheckInsLocal();
+    const mergedCheckIns = mergeCheckIns(cloudCheckIns, localCheckIns);
+    if (mergedCheckIns.length > 0) {
+      await saveCheckInsFirestore(uid, mergedCheckIns);
+      saveCheckInsLocal(mergedCheckIns);
+      console.log(`每日簽到已同步：合併後 ${mergedCheckIns.length} 筆已寫入雲端與本機`);
     }
   } catch (err) {
     console.error("同步本機記錄失敗", err);

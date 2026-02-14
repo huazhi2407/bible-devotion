@@ -43,6 +43,7 @@ export default function CheckInPage() {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewResult, setReviewResult] = useState<string | null>(null);
   const [reviewPeriod, setReviewPeriod] = useState<ReviewPeriod | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
@@ -50,6 +51,19 @@ export default function CheckInPage() {
     loadCheckIns(user?.uid ?? null).then(setCheckIns);
     loadRecords(user?.uid ?? null).then(setDevotionRecords);
   }, [user?.uid, authLoading]);
+
+  const handleSync = async () => {
+    if (!user?.uid) return;
+    setSyncing(true);
+    try {
+      const merged = await loadCheckIns(user.uid);
+      setCheckIns(merged);
+    } catch (err) {
+      console.error("同步失敗", err);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const todayCheckIn = getCheckInForDate(checkIns, selectedDate);
   const isToday = getDateKey(selectedDate) === getDateKey(new Date());
@@ -139,9 +153,19 @@ export default function CheckInPage() {
       </h1>
 
       {user && (
-        <p className="text-[var(--accent-subtle)] text-sm mb-6">
-          已以 Google 帳號登入，簽到記錄已同步至雲端
-        </p>
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <p className="text-[var(--accent-subtle)] text-sm">
+            已以 Google 帳號登入，簽到記錄會與雲端同步
+          </p>
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing}
+            className="px-3 py-1.5 text-sm rounded-sm border border-[var(--border-soft)] text-[var(--text-quiet)] hover:text-[var(--text-soft)] hover:bg-[var(--bg-softer)] disabled:opacity-50 transition-colors"
+          >
+            {syncing ? "同步中…" : "手動同步"}
+          </button>
+        </div>
       )}
 
       {/* 簽到表單 */}
