@@ -1,11 +1,29 @@
 rules_version = '2';
+
+// 聖經靈修專案 Firestore 安全規則
+// 僅允許已登入使用者讀寫「自己」底下的資料
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/records/{recordId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+    // 使用者個人資料：路徑為 /users/{userId}/...
+    // 僅當 request.auth.uid == userId 時允許讀寫
+    match /users/{userId} {
+
+      // 靈修記錄：/users/{userId}/records/{recordId}
+      match /records/{recordId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // 每日簽到：/users/{userId}/checkins/{checkInId}
+      match /checkins/{checkInId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
-    match /users/{userId}/checkins/{checkInId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+    // 其餘所有路徑一律拒絕（避免誤開權限）
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
