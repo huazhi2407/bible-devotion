@@ -143,7 +143,7 @@ export function subscribeCheckIns(
   }
 }
 
-/** 依登入狀態載入簽到記錄（已登入時會合併雲端與本機，確保多裝置同步） */
+/** 依登入狀態載入簽到記錄（已登入時會合併雲端與本機，並把本機獨有資料推上雲端） */
 export async function loadCheckIns(uid?: string | null): Promise<CheckInRecord[]> {
   const local = loadCheckInsLocal();
   if (uid && db) {
@@ -152,6 +152,13 @@ export async function loadCheckIns(uid?: string | null): Promise<CheckInRecord[]
       const merged = mergeCheckIns(cloud, local);
       if (merged.length > 0) {
         saveCheckInsLocal(merged);
+        // 若合併後有雲端沒有的紀錄（例如本機在未登入時簽的），寫回雲端讓手機/電腦都能看到
+        const cloudIds = new Set(cloud.map((c) => c.id));
+        const hasLocalOnly = merged.some((m) => !cloudIds.has(m.id));
+        if (hasLocalOnly) {
+          await saveCheckInsFirestore(uid, merged);
+          console.log(`已將本機獨有簽到上傳至雲端，共 ${merged.length} 筆`);
+        }
       }
       console.log(`簽到記錄已同步：雲端 ${cloud.length} 筆，本機 ${local.length} 筆，合併後 ${merged.length} 筆`);
       return merged;
