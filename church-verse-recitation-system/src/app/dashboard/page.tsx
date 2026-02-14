@@ -267,6 +267,16 @@ export default function DashboardPage() {
             錄音背誦經文，系統驗證通過後即可簽到。
           </p>
 
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none p-2 rounded-lg bg-white/5 border border-white/10 w-fit">
+            <input
+              type="checkbox"
+              checked={testFirstVerseOnly}
+              onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
+              className="rounded border-white/30 text-[var(--accent)]"
+            />
+            <span className="text-[var(--text)]">僅驗證第一節（測試用）</span>
+          </label>
+
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
           ) : (
@@ -297,15 +307,6 @@ export default function DashboardPage() {
                     <strong>手機無法自動辨識錄音</strong>時，請在下方輸入或貼上您背誦的經文內容，再按「驗證背誦」即可。
                   </div>
                 )}
-                <label className="flex items-center gap-2 text-sm text-[var(--muted)] mb-2">
-                  <input
-                    type="checkbox"
-                    checked={testFirstVerseOnly}
-                    onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
-                    className="rounded border-white/30"
-                  />
-                  僅驗證第一節（測試）
-                </label>
                 <label className="block text-sm text-[var(--muted)] mb-1">
                   背誦內容（可錄音辨識或直接輸入）
                 </label>
