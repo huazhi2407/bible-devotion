@@ -103,8 +103,8 @@ export default function CheckInPage() {
         ? checkIns.map((c, i) => (i === existingIndex ? checkIn : c))
         : [checkIn, ...checkIns];
 
-      setCheckIns(updated);
-      await saveCheckIns(updated, user?.uid ?? null);
+      const synced = await saveCheckIns(updated, user?.uid ?? null);
+      setCheckIns(synced);
       alert("簽到成功！");
     } catch (error) {
       console.error("簽到失敗", error);

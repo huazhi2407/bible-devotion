@@ -133,19 +133,29 @@ export async function loadCheckIns(uid?: string | null): Promise<CheckInRecord[]
   return local;
 }
 
-/** 依登入狀態儲存簽到記錄 */
+/**
+ * 依登入狀態儲存簽到記錄。
+ * 已登入時會先拉取雲端最新資料再合併後寫回，避免手機/電腦互相覆蓋。
+ * @returns 合併後的完整列表（已登入時），供畫面更新用
+ */
 export async function saveCheckIns(
   checkIns: CheckInRecord[],
   uid?: string | null
-): Promise<void> {
+): Promise<CheckInRecord[]> {
   saveCheckInsLocal(checkIns);
   if (uid && db) {
     try {
-      await saveCheckInsFirestore(uid, checkIns);
+      const cloud = await loadCheckInsFirestore(uid);
+      const merged = mergeCheckIns(cloud, checkIns);
+      await saveCheckInsFirestore(uid, merged);
+      saveCheckInsLocal(merged);
+      console.log(`簽到已寫入並同步：雲端 ${cloud.length} 筆 + 本機 → 合併 ${merged.length} 筆`);
+      return merged;
     } catch (err) {
       console.error("雲端同步失敗，已儲存至本機", err);
     }
   }
+  return checkIns;
 }
 
 export function isTodayCheckIn(iso: string): boolean {
