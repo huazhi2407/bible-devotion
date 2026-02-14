@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "npm install --prefix church-verse-recitation-system && npm run build --prefix church-verse-recitation-system",
+    "start": "npm run start --prefix church-verse-recitation-system",
     "lint": "next lint",
     "build:deploy": "npm install --prefix church-verse-recitation-system && npm run build --prefix church-verse-recitation-system",
     "start:deploy": "npm run start --prefix church-verse-recitation-system"
