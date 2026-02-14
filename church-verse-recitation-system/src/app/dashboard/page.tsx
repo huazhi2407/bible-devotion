@@ -260,30 +260,33 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {verse && (
-        <section className="rounded-2xl bg-[var(--card)] border border-white/10 p-6 space-y-4">
-          <h2 className="font-semibold">錄音 + AI 感測簽到</h2>
+      <section className="rounded-2xl bg-[var(--card)] border border-white/10 p-6 space-y-4">
+        <h2 className="font-semibold">錄音 + AI 感測簽到</h2>
+        {!verse ? (
+          <p className="text-amber-200/90 text-sm">本週尚未填寫經文，請由管理員在「管理經文」填寫。填寫後可使用下方驗證與「僅驗證第一節」測試。</p>
+        ) : (
           <p className="text-sm text-[var(--muted)]">
             錄音背誦經文，系統驗證通過後即可簽到。
           </p>
-          {!todayContent && (
-            <p className="text-amber-200/90 text-sm">本日經文尚未填寫，可先勾選「僅驗證第一節」測試。</p>
-          )}
+        )}
+        {verse && !todayContent && (
+          <p className="text-amber-200/90 text-sm">本日經文尚未填寫，可先勾選「僅驗證第一節」測試。</p>
+        )}
 
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
-            <input
-              id="test-first-verse"
-              type="checkbox"
-              checked={testFirstVerseOnly}
-              onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
-              className="w-4 h-4 rounded border-2 border-amber-400 text-amber-500 focus:ring-amber-400"
-            />
-            <label htmlFor="test-first-verse" className="text-sm font-medium text-amber-200 cursor-pointer select-none">
-              僅驗證第一節（測試用）
-            </label>
-          </div>
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+          <input
+            id="test-first-verse"
+            type="checkbox"
+            checked={testFirstVerseOnly}
+            onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
+            className="w-4 h-4 rounded border-2 border-amber-400 text-amber-500 focus:ring-amber-400"
+          />
+          <label htmlFor="test-first-verse" className="text-sm font-medium text-amber-200 cursor-pointer select-none">
+            僅驗證第一節（測試用）
+          </label>
+        </div>
 
-          {todayCheckIn ? (
+        {verse && (todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
           ) : (
             <>
@@ -367,9 +370,8 @@ export default function DashboardPage() {
                 </p>
               )}
             </>
-          )}
+          ))}
         </section>
-      )}
     </main>
   );
 }
