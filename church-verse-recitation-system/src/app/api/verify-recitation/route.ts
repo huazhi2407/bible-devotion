@@ -4,7 +4,8 @@ import { getCumulativeContent } from "@/lib/weekUtils";
 
 /**
  * 驗證使用者背誦內容是否與當日經文相符（文字比對）
- * body: { weekId, day, recitedText }
+ * body: { weekId, day, recitedText, testFirstVerseOnly? }
+ * testFirstVerseOnly: true 時僅以「第一節」經文驗證（測試用）
  */
 export async function POST(request: Request) {
   try {
@@ -18,10 +19,11 @@ export async function POST(request: Request) {
     }
     await adminAuth.verifyIdToken(token);
 
-    const { weekId, day, recitedText } = (await request.json()) as {
+    const { weekId, day, recitedText, testFirstVerseOnly } = (await request.json()) as {
       weekId?: string;
       day?: number;
       recitedText?: string;
+      testFirstVerseOnly?: boolean;
     };
 
     if (!weekId || !day || day < 1 || day > 7 || typeof recitedText !== "string") {
@@ -38,7 +40,9 @@ export async function POST(request: Request) {
 
     const data = verseSnap.data()!;
     const segments = (data.segments as string[]) ?? [];
-    const expected = getCumulativeContent(segments, day);
+    const expected = testFirstVerseOnly
+      ? (segments[0] ?? "")
+      : getCumulativeContent(segments, day);
 
     const normalize = (s: string) =>
       s

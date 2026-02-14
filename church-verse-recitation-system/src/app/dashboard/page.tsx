@@ -35,6 +35,7 @@ export default function DashboardPage() {
     "idle" | "saving" | "done" | "err"
   >("idle");
   const [todayCheckIn, setTodayCheckIn] = useState<boolean | null>(null);
+  const [testFirstVerseOnly, setTestFirstVerseOnly] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -155,6 +156,7 @@ export default function DashboardPage() {
           weekId,
           day: dayOfWeek,
           recitedText: text,
+          testFirstVerseOnly: testFirstVerseOnly || undefined,
         }),
       });
       const data = await res.json();
@@ -295,6 +297,15 @@ export default function DashboardPage() {
                     <strong>手機無法自動辨識錄音</strong>時，請在下方輸入或貼上您背誦的經文內容，再按「驗證背誦」即可。
                   </div>
                 )}
+                <label className="flex items-center gap-2 text-sm text-[var(--muted)] mb-2">
+                  <input
+                    type="checkbox"
+                    checked={testFirstVerseOnly}
+                    onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
+                    className="rounded border-white/30"
+                  />
+                  僅驗證第一節（測試）
+                </label>
                 <label className="block text-sm text-[var(--muted)] mb-1">
                   背誦內容（可錄音辨識或直接輸入）
                 </label>
