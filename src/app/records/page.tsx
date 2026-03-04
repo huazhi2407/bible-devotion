@@ -71,6 +71,12 @@ function RecordsList({
                   <p className="text-[var(--text-soft)]">{rec.observation}</p>
                 </div>
               )}
+              {rec.meditationBySnippet && Object.entries(rec.meditationBySnippet).map(([id, text]) => text && (
+                <div key={id}>
+                  <p className="text-[var(--accent-subtle)] text-xs mb-1">默想</p>
+                  <p className="text-[var(--text-soft)]">{text}</p>
+                </div>
+              ))}
               {rec.application && (
                 <div>
                   <p className="text-[var(--accent-subtle)] text-xs mb-1">應用</p>

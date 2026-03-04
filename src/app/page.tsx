@@ -3,18 +3,23 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loadRecords, saveRecords, formatRecordDate, normalizeScriptures, type DevotionRecord, type ScriptureVersion } from "@/lib/devotion";
+import { loadRecords, saveRecords, formatRecordDate, normalizeScriptures, type DevotionRecord, type ScriptureVersion, type HighlightsPerScripture, type ScriptureHighlight } from "@/lib/devotion";
 import { useAuth } from "@/contexts/AuthContext";
 
+/** 四階段：讀經 → 默想 → 禱告 → 默觀（可自由切換） */
 type Phase =
   | "idle"
-  | "prayer"
   | "scripture"
-  | "observation"
-  | "application"
-  | "prayer-write";
+  | "meditation"
+  | "prayer-write"
+  | "contemplation";
 
-const PRAYER_MINUTES = 5;
+const STAGES: { id: Phase; label: string }[] = [
+  { id: "scripture", label: "讀經" },
+  { id: "meditation", label: "默想" },
+  { id: "prayer-write", label: "禱告" },
+  { id: "contemplation", label: "默觀" },
+];
 
 const MUSIC_OPTIONS = [
   { id: "V7Bohz21qq4", label: "音樂 1", url: "https://youtu.be/V7Bohz21qq4" },
@@ -154,9 +159,152 @@ function useYouTubeBackgroundMusic(isPlaying: boolean, videoId: string) {
   return containerRef;
 }
 
+/** 合併重疊的畫線區間並排序 */
+function mergeHighlights(ranges: ScriptureHighlight[]): ScriptureHighlight[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const out: ScriptureHighlight[] = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = out[out.length - 1];
+    if (sorted[i].start <= last.end) {
+      last.end = Math.max(last.end, sorted[i].end);
+    } else {
+      out.push(sorted[i]);
+    }
+  }
+  return out;
+}
+
+/** 將經文依畫線切成區段，用於渲染 */
+function segmentText(text: string, highlights: ScriptureHighlight[]): { text: string; highlight: boolean }[] {
+  const merged = mergeHighlights(highlights);
+  if (merged.length === 0) return [{ text, highlight: false }];
+  const out: { text: string; highlight: boolean }[] = [];
+  let pos = 0;
+  for (const r of merged) {
+    if (r.start > pos) out.push({ text: text.slice(pos, r.start), highlight: false });
+    out.push({ text: text.slice(r.start, r.end), highlight: true });
+    pos = r.end;
+  }
+  if (pos < text.length) out.push({ text: text.slice(pos), highlight: false });
+  return out;
+}
+
+/** 畫線經句（含穩定 id，供標籤與默想欄對應） */
+type HighlightedSnippet = { id: string; reference: string; text: string };
+
+/** 從經文與畫線資料取出所有「畫線經句」，供默想頁當標籤顯示 */
+function getHighlightedSnippets(
+  scriptures: ScriptureVersion[],
+  highlightsPerScripture: HighlightsPerScripture
+): HighlightedSnippet[] {
+  const out: HighlightedSnippet[] = [];
+  scriptures.forEach((scripture, index) => {
+    const highlights = highlightsPerScripture[String(index)] ?? [];
+    const merged = mergeHighlights(highlights);
+    for (const r of merged) {
+      const text = scripture.text.slice(r.start, r.end).trim();
+      if (text) out.push({ id: `${index}-${r.start}-${r.end}`, reference: scripture.reference || `版本 ${index + 1}`, text });
+    }
+  });
+  return out;
+}
+
+/** 可畫線的經文區塊（選取後加入畫線） */
+function HighlightableScripture({
+  scriptureIndex,
+  text,
+  highlights,
+  scriptureSizeClass,
+  onAddHighlight,
+}: {
+  scriptureIndex: number;
+  text: string;
+  highlights: ScriptureHighlight[];
+  scriptureSizeClass: string;
+  onAddHighlight: (index: number, start: number, end: number) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [showAddBtn, setShowAddBtn] = useState(false);
+  const [pendingRange, setPendingRange] = useState<{ start: number; end: number } | null>(null);
+
+  const onMouseUp = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      setShowAddBtn(false);
+      setPendingRange(null);
+      return;
+    }
+    const node = containerRef.current;
+    if (!node || !node.contains(sel.anchorNode) || !node.contains(sel.focusNode)) {
+      setShowAddBtn(false);
+      return;
+    }
+    try {
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.setEnd(sel.anchorNode!, sel.anchorOffset);
+      const start = range.toString().length;
+      range.setEnd(sel.focusNode!, sel.focusOffset);
+      const end = range.toString().length;
+      const startOff = Math.min(start, end);
+      const endOff = Math.max(start, end);
+      if (startOff >= endOff) return;
+      setPendingRange({ start: startOff, end: endOff });
+      setShowAddBtn(true);
+    } catch {
+      setShowAddBtn(false);
+    }
+  }, []);
+
+  const addHighlight = useCallback(() => {
+    if (pendingRange) {
+      onAddHighlight(scriptureIndex, pendingRange.start, pendingRange.end);
+      setPendingRange(null);
+      setShowAddBtn(false);
+      window.getSelection()?.removeAllRanges();
+    }
+  }, [scriptureIndex, pendingRange, onAddHighlight]);
+
+  const segments = segmentText(text, highlights);
+
+  return (
+    <div className="relative">
+      <div
+        ref={containerRef}
+        onMouseUp={onMouseUp}
+        className={`${scriptureSizeClass} leading-relaxed text-[var(--text-soft)] font-normal select-text cursor-text`}
+        style={{ userSelect: "text" }}
+      >
+        {segments.map((seg, i) =>
+          seg.highlight ? (
+            <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">
+              {seg.text}
+            </mark>
+          ) : (
+            <span key={i}>{seg.text}</span>
+          )
+        )}
+      </div>
+      {showAddBtn && pendingRange && (
+        <button
+          type="button"
+          onClick={addHighlight}
+          className="mt-2 px-3 py-1.5 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] text-[var(--text-soft)] text-sm hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+        >
+          加入畫線
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function DevotionPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [todayScriptures, setTodayScriptures] = useState<ScriptureVersion[]>([DEFAULT_SCRIPTURE]);
+  const [highlightsPerScripture, setHighlightsPerScripture] = useState<HighlightsPerScripture>({});
+  const [meditationBySnippet, setMeditationBySnippet] = useState<Record<string, string>>({});
+  const [expandedSnippetIds, setExpandedSnippetIds] = useState<string[]>([]);
   const [observation, setObservation] = useState("");
   const [application, setApplication] = useState("");
   const [prayerText, setPrayerText] = useState("");
@@ -197,6 +345,8 @@ export default function DevotionPage() {
       id: `devotion-${Date.now()}`,
       date: new Date().toISOString(),
       scripture: todayScriptures.length === 1 ? todayScriptures[0] : todayScriptures,
+      highlightsPerScripture: Object.keys(highlightsPerScripture).length ? highlightsPerScripture : undefined,
+      meditationBySnippet: Object.keys(meditationBySnippet).length ? meditationBySnippet : undefined,
       observation,
       application,
       prayerText,
@@ -210,12 +360,15 @@ export default function DevotionPage() {
     } finally {
       setPhase("idle");
       setTodayScriptures([DEFAULT_SCRIPTURE]);
+      setHighlightsPerScripture({});
+      setMeditationBySnippet({});
+      setExpandedSnippetIds([]);
       setObservation("");
       setApplication("");
       setPrayerText("");
       router.push("/records");
     }
-  }, [todayScriptures, observation, application, prayerText, records, user?.uid, router]);
+  }, [todayScriptures, highlightsPerScripture, meditationBySnippet, observation, application, prayerText, records, user?.uid, router]);
 
   const deleteRecord = useCallback(async (id: string) => {
     if (!confirm("確定要刪除此靈修記錄嗎？")) return;
@@ -246,28 +399,16 @@ export default function DevotionPage() {
     "text-xl md:text-2xl";
 
   const startDevotion = useCallback(() => {
-    setPhase("prayer");
+    setPhase("scripture");
   }, []);
 
-  useEffect(() => {
-    if (phase !== "prayer") return;
-    const t = setTimeout(
-      () => setPhase("scripture"),
-      PRAYER_MINUTES * 60 * 1000
-    );
-    return () => clearTimeout(t);
-  }, [phase]);
-
-  const formatRecordDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString("zh-TW", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+  const addHighlight = useCallback((scriptureIndex: number, start: number, end: number) => {
+    setHighlightsPerScripture((prev) => {
+      const key = String(scriptureIndex);
+      const list = [...(prev[key] ?? []), { start, end }];
+      return { ...prev, [key]: mergeHighlights(list) };
     });
-  };
+  }, []);
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 py-12 relative">
@@ -423,16 +564,29 @@ export default function DevotionPage() {
                     </div>
                     {expandedRecordId === rec.id && (
                       <div className="px-3 py-2 pt-0 border-t border-[var(--border-soft)] bg-white/50 text-sm text-[var(--text-quiet)] space-y-3 max-h-80 overflow-y-auto whitespace-pre-wrap">
-                        {normalizeScriptures(rec.scripture).map((scripture, index) => (
-                          <div key={index} className={index > 0 ? "pt-3 border-t border-[var(--border-soft)]" : ""}>
-                            <p className="text-[var(--accent-subtle)] text-xs mb-1">
-                              {normalizeScriptures(rec.scripture).length > 1 ? `版本 ${index + 1}` : "經文"}
-                            </p>
-                            <p className="text-[var(--text-soft)] font-medium text-sm mb-1">{scripture.reference || `版本 ${index + 1}`}</p>
-                            <p className="text-[var(--text-soft)]">{scripture.text}</p>
-                          </div>
-                        ))}
+                        {normalizeScriptures(rec.scripture).map((scripture, index) => {
+                          const highlights = rec.highlightsPerScripture?.[String(index)] ?? [];
+                          const segments = segmentText(scripture.text, highlights);
+                          return (
+                            <div key={index} className={index > 0 ? "pt-3 border-t border-[var(--border-soft)]" : ""}>
+                              <p className="text-[var(--accent-subtle)] text-xs mb-1">
+                                {normalizeScriptures(rec.scripture).length > 1 ? `版本 ${index + 1}` : "經文"}
+                              </p>
+                              <p className="text-[var(--text-soft)] font-medium text-sm mb-1">{scripture.reference || `版本 ${index + 1}`}</p>
+                              <p className="text-[var(--text-soft)]">
+                                {segments.map((seg, i) =>
+                                  seg.highlight ? (
+                                    <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">{seg.text}</mark>
+                                  ) : (
+                                    <span key={i}>{seg.text}</span>
+                                  )
+                                )}
+                              </p>
+                            </div>
+                          );
+                        })}
                         {rec.observation && <p><span className="text-[var(--accent-subtle)]">觀察：</span>{rec.observation}</p>}
+                        {rec.meditationBySnippet && Object.entries(rec.meditationBySnippet).map(([id, text]) => text && <p key={id}><span className="text-[var(--accent-subtle)]">默想：</span>{text}</p>)}
                         {rec.application && <p><span className="text-[var(--accent-subtle)]">應用：</span>{rec.application}</p>}
                         {rec.prayerText && <p><span className="text-[var(--accent-subtle)]">禱告：</span>{rec.prayerText}</p>}
                       </div>
@@ -556,71 +710,46 @@ export default function DevotionPage() {
         </section>
       )}
 
-      {phase === "prayer" && (
-        <section className="text-center max-w-lg animate-fade-in">
-          <p className="text-left mb-6">
+      {/* 四階段導覽：讀經、默想、禱告、默觀，可自由切換；內含設定按鈕 */}
+      {phase !== "idle" && (
+        <nav className="fixed top-0 left-0 right-0 z-10 flex flex-wrap items-center justify-center gap-1 p-3 bg-[var(--bg)]/95 backdrop-blur border-b border-[var(--border-soft)]">
+          {STAGES.map(({ id, label }) => (
             <button
+              key={id}
               type="button"
-              onClick={() => setPhase("idle")}
-              className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)]"
+              onClick={() => setPhase(id)}
+              className={`px-4 py-2 rounded-sm text-sm transition-colors ${
+                phase === id
+                  ? "bg-[var(--border-soft)] text-[var(--text-soft)]"
+                  : "text-[var(--text-quiet)] hover:bg-[var(--bg-softer)] hover:text-[var(--text-soft)]"
+              }`}
             >
-              ← 返回開始
+              {label}
             </button>
-          </p>
-          <p className="text-[var(--text-quiet)] text-lg leading-relaxed">
-            在主面前靜默。
-          </p>
-          <p className="text-[var(--text-quiet)] text-base mt-6 opacity-80">
-            在這段時間裡保持靜默。時間到了，經文會自動出現。
-          </p>
-          <div className="mt-8">
-            <button
-              type="button"
-              onClick={() => setPhase("scripture")}
-              className="px-6 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-quiet)] text-sm hover:bg-[var(--bg-softer)] hover:text-[var(--text-soft)] transition-colors"
-            >
-              跳過，直接進入經文
-            </button>
-          </div>
-          {typeof window !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
-            <div className="mt-8 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)]">
-              <p className="text-[var(--text-quiet)] text-sm mb-3">
-                背景音樂已載入
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const iframe = youtubeContainerRef.current?.querySelector("iframe");
-                  if (iframe) {
-                    // 觸發 YouTube iframe 播放（需要用戶互動）
-                    iframe.contentWindow?.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-                  }
-                }}
-                className="px-4 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-white transition-colors"
-              >
-                ▶ 播放背景音樂
-              </button>
-              <p className="text-[var(--accent-subtle)] text-xs mt-2">
-                目前播放：{MUSIC_OPTIONS.find(m => m.id === musicId)?.label || "音樂 1"}
-              </p>
-              <p className="text-[var(--accent-subtle)] text-xs mt-2">
-                手機瀏覽器需要點擊才能播放音樂
-              </p>
-            </div>
-          )}
-        </section>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPanelOpen(true)}
+            className="px-3 py-2 text-[var(--text-quiet)] text-sm hover:bg-[var(--bg-softer)] hover:text-[var(--text-soft)] rounded-sm"
+            title="字體、字級、經文大小、背景音樂、歷史記錄"
+          >
+            設定
+          </button>
+          <button
+            type="button"
+            onClick={() => setPhase("idle")}
+            className="px-3 py-2 text-[var(--text-quiet)] text-sm hover:text-[var(--text-soft)]"
+            title="返回開始"
+          >
+            結束
+          </button>
+        </nav>
       )}
 
       {phase === "scripture" && (
-        <section className="max-w-2xl w-full animate-fade-in">
-          <p className="mb-6">
-            <button
-              type="button"
-              onClick={() => setPhase("prayer")}
-              className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)]"
-            >
-              ← 返回靜默
-            </button>
+        <section className="max-w-2xl w-full animate-fade-in mt-14">
+          <p className="text-[var(--accent-subtle)] text-sm mb-4">
+            選取經文字句後按「加入畫線」，可到默想頁整理所思。
           </p>
           <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-6">
             {todayScriptures.map((scripture, index) => (
@@ -628,156 +757,151 @@ export default function DevotionPage() {
                 <p className="text-[var(--accent-subtle)] text-sm mb-4">
                   {scripture.reference || `版本 ${index + 1}`}
                 </p>
-                <p className={`${scriptureSizeClass} leading-relaxed text-[var(--text-soft)] font-normal`}>
-                  {scripture.text}
-                </p>
+                <HighlightableScripture
+                  scriptureIndex={index}
+                  text={scripture.text}
+                  highlights={highlightsPerScripture[String(index)] ?? []}
+                  scriptureSizeClass={scriptureSizeClass}
+                  onAddHighlight={addHighlight}
+                />
               </div>
             ))}
           </div>
-          <button
-            onClick={() => setPhase("observation")}
-            className="mt-12 px-6 py-2 text-[var(--text-quiet)] text-sm border border-[var(--border-soft)] rounded-sm hover:bg-[var(--bg-softer)] transition-colors"
-          >
-            繼續
-          </button>
         </section>
       )}
 
-      {phase === "observation" && (
-        <section className="w-full max-w-4xl flex gap-6 animate-fade-in">
-          <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-8 hidden md:block max-h-[70vh] overflow-y-auto">
+      {/* 經文側欄（含畫線）：用於默想、禱告 */}
+      {phase === "meditation" && (
+        <section className="w-full max-w-4xl flex gap-6 animate-fade-in mt-14">
+          <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-16 hidden md:block max-h-[70vh] overflow-y-auto">
             <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
             {todayScriptures.map((scripture, index) => (
               <div key={index} className={index > 0 ? "mt-4 pt-4 border-t border-[var(--border-soft)]" : ""}>
                 <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
-                <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                <div className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">
+                  {segmentText(scripture.text, highlightsPerScripture[String(index)] ?? []).map((seg, i) =>
+                    seg.highlight ? (
+                      <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">{seg.text}</mark>
+                    ) : (
+                      <span key={i}>{seg.text}</span>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </aside>
           <div className="flex-1 min-w-0">
-            <p className="mb-4">
-              <button
-                type="button"
-                onClick={() => setPhase("scripture")}
-                className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)]"
-              >
-                ← 返回經文
-              </button>
-            </p>
             <div className="md:hidden mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] max-h-40 overflow-y-auto">
               <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
               {todayScriptures.map((scripture, index) => (
                 <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
                   <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
-                  <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                  <div className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">
+                    {segmentText(scripture.text, highlightsPerScripture[String(index)] ?? []).map((seg, i) =>
+                      seg.highlight ? (
+                        <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">{seg.text}</mark>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      )
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
-            <p className="text-[var(--accent-subtle)] text-sm mb-2">觀察</p>
+            <p className="text-[var(--accent-subtle)] text-sm mb-2">默想</p>
+            {getHighlightedSnippets(todayScriptures, highlightsPerScripture).length > 0 && (
+              <div className="mb-4 space-y-3">
+                <p className="text-[var(--text-quiet)] text-xs">點擊標籤展開／收合默想欄</p>
+                <div className="space-y-2">
+                  {getHighlightedSnippets(todayScriptures, highlightsPerScripture).map((snippet) => {
+                    const isExpanded = expandedSnippetIds.includes(snippet.id);
+                    return (
+                      <div
+                        key={snippet.id}
+                        className="rounded-lg border border-amber-200/80 dark:border-amber-700/50 overflow-hidden bg-amber-50/50 dark:bg-amber-900/20"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setExpandedSnippetIds((prev) => (prev.includes(snippet.id) ? prev.filter((id) => id !== snippet.id) : [...prev, snippet.id]))}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-amber-100/80 dark:hover:bg-amber-900/30 transition-colors"
+                        >
+                          <span className="text-amber-800 dark:text-amber-200 text-xs shrink-0 font-medium">{snippet.reference}</span>
+                          <span className="flex-1 min-w-0 truncate text-gray-900 dark:text-amber-50 text-sm">{snippet.text}</span>
+                          <span className="text-amber-700 dark:text-amber-300 text-xs shrink-0" aria-hidden>
+                            {isExpanded ? "▼ 收合" : "▶ 展開"}
+                          </span>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t border-amber-200/80 dark:border-amber-700/50 p-3">
+                            <textarea
+                              value={meditationBySnippet[snippet.id] ?? ""}
+                              onChange={(e) => setMeditationBySnippet((prev) => ({ ...prev, [snippet.id]: e.target.value }))}
+                              placeholder="針對這段經句寫下默想……"
+                              className="w-full min-h-[100px] p-3 bg-white dark:bg-black/20 border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-amber-600 placeholder:dark:text-amber-400 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
+                              rows={4}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <p className="text-[var(--text-quiet)] text-base mb-4">
-              你在這段經文裡注意到什麼？
+              整理你對這段經文的想法與領受。
             </p>
             <textarea
               value={observation}
               onChange={(e) => setObservation(e.target.value)}
-              placeholder="靜靜默想……"
-              className="w-full min-h-[140px] p-4 bg-[var(--bg-softer)] border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
-              rows={5}
+              placeholder="靜靜默想，寫下你注意到的、與生活的連結……"
+              className="w-full min-h-[200px] p-4 bg-[var(--bg-softer)] border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
+              rows={6}
             />
-            <button
-              onClick={() => setPhase("application")}
-              className="mt-6 px-6 py-2 text-[var(--text-quiet)] text-sm border border-[var(--border-soft)] rounded-sm hover:bg-[var(--bg-softer)] transition-colors"
-            >
-              繼續
-            </button>
-          </div>
-        </section>
-      )}
-
-      {phase === "application" && (
-        <section className="w-full max-w-4xl flex gap-6 animate-fade-in">
-          <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-8 hidden md:block max-h-[70vh] overflow-y-auto">
-            <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
-            {todayScriptures.map((scripture, index) => (
-              <div key={index} className={index > 0 ? "mt-4 pt-4 border-t border-[var(--border-soft)]" : ""}>
-                <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
-                <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
-              </div>
-            ))}
-          </aside>
-          <div className="flex-1 min-w-0">
-            <p className="mb-4">
-              <button
-                type="button"
-                onClick={() => setPhase("observation")}
-                className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)]"
-              >
-                ← 返回觀察
-              </button>
-            </p>
-            <div className="md:hidden mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] max-h-40 overflow-y-auto">
-              <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
-              {todayScriptures.map((scripture, index) => (
-                <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
-                  <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
-                  <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
-                </div>
-              ))}
-            </div>
-            <p className="text-[var(--accent-subtle)] text-sm mb-2">應用</p>
-            <p className="text-[var(--text-quiet)] text-base mb-4">
-              這段經文如何對你今日的生活說話？
-            </p>
-            <textarea
-              value={application}
-              onChange={(e) => setApplication(e.target.value)}
-              placeholder="與生活的連結……"
-              className="w-full min-h-[140px] p-4 bg-[var(--bg-softer)] border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
-              rows={5}
-            />
-            <button
-              onClick={() => setPhase("prayer-write")}
-              className="mt-6 px-6 py-2 text-[var(--text-quiet)] text-sm border border-[var(--border-soft)] rounded-sm hover:bg-[var(--bg-softer)] transition-colors"
-            >
-              繼續
-            </button>
           </div>
         </section>
       )}
 
       {phase === "prayer-write" && (
-        <section className="w-full max-w-4xl flex gap-6 animate-fade-in">
-          <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-8 hidden md:block max-h-[70vh] overflow-y-auto">
+        <section className="w-full max-w-4xl flex gap-6 animate-fade-in mt-14">
+          <aside className="shrink-0 w-48 lg:w-56 p-4 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] self-start sticky top-16 hidden md:block max-h-[70vh] overflow-y-auto">
             <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
             {todayScriptures.map((scripture, index) => (
               <div key={index} className={index > 0 ? "mt-4 pt-4 border-t border-[var(--border-soft)]" : ""}>
                 <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
-                <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                <div className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">
+                  {segmentText(scripture.text, highlightsPerScripture[String(index)] ?? []).map((seg, i) =>
+                    seg.highlight ? (
+                      <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">{seg.text}</mark>
+                    ) : (
+                      <span key={i}>{seg.text}</span>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </aside>
           <div className="flex-1 min-w-0">
-            <p className="mb-4">
-              <button
-                type="button"
-                onClick={() => setPhase("application")}
-                className="text-sm text-[var(--text-quiet)] hover:text-[var(--text-soft)]"
-              >
-                ← 返回應用
-              </button>
-            </p>
             <div className="md:hidden mb-4 p-3 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] max-h-40 overflow-y-auto">
               <p className="text-[var(--accent-subtle)] text-xs mb-2">今日經文</p>
               {todayScriptures.map((scripture, index) => (
                 <div key={index} className={index > 0 ? "mt-3 pt-3 border-t border-[var(--border-soft)]" : ""}>
                   <p className="text-[var(--text-soft)] font-medium text-sm">{scripture.reference || `版本 ${index + 1}`}</p>
-                  <p className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">{scripture.text}</p>
+                  <div className="text-[var(--text-quiet)] text-sm mt-1 leading-relaxed">
+                    {segmentText(scripture.text, highlightsPerScripture[String(index)] ?? []).map((seg, i) =>
+                      seg.highlight ? (
+                        <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">{seg.text}</mark>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      )
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
             <p className="text-[var(--accent-subtle)] text-sm mb-2">禱告</p>
             <p className="text-[var(--text-quiet)] text-base mb-4">
-              在這裡寫下你的禱告。
+              在這裡寫下你對神的回應與禱告。
             </p>
             <textarea
               value={prayerText}
@@ -786,14 +910,25 @@ export default function DevotionPage() {
               className="w-full min-h-[200px] p-4 bg-[var(--bg-softer)] border border-[var(--border-soft)] rounded-sm text-[var(--text-soft)] placeholder:text-[var(--accent-subtle)] resize-none focus:outline-none focus:ring-1 focus:ring-[var(--border-soft)]"
               rows={8}
             />
-            <button
-              type="button"
-              onClick={saveCurrentDevotion}
-              className="mt-6 px-6 py-2 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-[var(--bg-softer)] transition-colors"
-            >
-              完成此次靈修（儲存記錄）
-            </button>
           </div>
+        </section>
+      )}
+
+      {phase === "contemplation" && (
+        <section className="max-w-lg w-full animate-fade-in mt-14 text-center">
+          <p className="text-[var(--text-quiet)] text-lg leading-relaxed mb-6">
+            在神的平安中休息。
+          </p>
+          <p className="text-[var(--text-soft)] text-base mb-8">
+            默觀不是再思考，而是安歇在主的同在中，感受祂的平安。
+          </p>
+          <button
+            type="button"
+            onClick={saveCurrentDevotion}
+            className="px-6 py-3 rounded-sm border border-[var(--border-soft)] text-[var(--text-soft)] text-sm hover:bg-[var(--bg-softer)] transition-colors"
+          >
+            完成此次靈修（儲存記錄）
+          </button>
         </section>
       )}
     </main>

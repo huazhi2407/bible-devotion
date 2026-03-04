@@ -16,10 +16,57 @@ export type ScriptureVersion = {
   text: string;
 };
 
+/** 單一經文內的一段畫線（字元起訖） */
+export type ScriptureHighlight = { start: number; end: number };
+
+/** 每段經文（依索引）的畫線列表，key 為 scripture 陣列索引字串 "0","1",... */
+export type HighlightsPerScripture = Record<string, ScriptureHighlight[]>;
+
+/** 合併重疊的畫線區間並排序 */
+export function mergeHighlights(ranges: ScriptureHighlight[]): ScriptureHighlight[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const out: ScriptureHighlight[] = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = out[out.length - 1];
+    if (sorted[i].start <= last.end) {
+      last.end = Math.max(last.end, sorted[i].end);
+    } else {
+      out.push(sorted[i]);
+    }
+  }
+  return out;
+}
+
+/** 將經文依畫線切成區段，用於渲染 */
+export function segmentText(
+  text: string,
+  highlights: ScriptureHighlight[]
+): { text: string; highlight: boolean }[] {
+  const merged = mergeHighlights(highlights);
+  if (merged.length === 0) return [{ text, highlight: false }];
+  const out: { text: string; highlight: boolean }[] = [];
+  let pos = 0;
+  for (const r of merged) {
+    if (r.start > pos) out.push({ text: text.slice(pos, r.start), highlight: false });
+    out.push({ text: text.slice(r.start, r.end), highlight: true });
+    pos = r.end;
+  }
+  if (pos < text.length) out.push({ text: text.slice(pos), highlight: false });
+  return out;
+}
+
+/** 每個畫線經句的默想內容，key 為 snippetId（例如 "0-0-10"） */
+export type MeditationBySnippet = Record<string, string>;
+
 export type DevotionRecord = {
   id: string;
   date: string;
   scripture: ScriptureVersion | ScriptureVersion[]; // 支持單一或數組，向後兼容
+  /** 經文畫線：依 scripture 索引儲存 */
+  highlightsPerScripture?: HighlightsPerScripture;
+  /** 每個畫線標籤對應的默想文字 */
+  meditationBySnippet?: MeditationBySnippet;
   observation: string;
   application: string;
   prayerText: string;
