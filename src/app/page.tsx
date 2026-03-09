@@ -228,34 +228,50 @@ function HighlightableScripture({
   const [showAddBtn, setShowAddBtn] = useState(false);
   const [pendingRange, setPendingRange] = useState<{ start: number; end: number } | null>(null);
 
-  const onMouseUp = useCallback(() => {
+  const updatePendingFromSelection = useCallback(() => {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) {
-      setShowAddBtn(false);
-      setPendingRange(null);
+    const node = containerRef.current;
+    if (!sel || !node) return;
+
+    // 手機點擊「加入畫線」時選取可能會先被清掉；若已經有 pendingRange 就先保留
+    if (sel.isCollapsed) {
+      if (!pendingRange) {
+        setShowAddBtn(false);
+        setPendingRange(null);
+      }
       return;
     }
-    const node = containerRef.current;
-    if (!node || !node.contains(sel.anchorNode) || !node.contains(sel.focusNode)) {
+
+    if (!node.contains(sel.anchorNode) || !node.contains(sel.focusNode)) {
       setShowAddBtn(false);
       return;
     }
     try {
-      const range = document.createRange();
-      range.setStart(node, 0);
-      range.setEnd(sel.anchorNode!, sel.anchorOffset);
-      const start = range.toString().length;
-      range.setEnd(sel.focusNode!, sel.focusOffset);
-      const end = range.toString().length;
+      const r = document.createRange();
+      r.setStart(node, 0);
+      r.setEnd(sel.anchorNode!, sel.anchorOffset);
+      const start = r.toString().length;
+      r.setEnd(sel.focusNode!, sel.focusOffset);
+      const end = r.toString().length;
       const startOff = Math.min(start, end);
       const endOff = Math.max(start, end);
       if (startOff >= endOff) return;
       setPendingRange({ start: startOff, end: endOff });
       setShowAddBtn(true);
     } catch {
-      setShowAddBtn(false);
+      // ignore
     }
-  }, []);
+  }, [pendingRange]);
+
+  const onPointerUp = useCallback(() => {
+    updatePendingFromSelection();
+  }, [updatePendingFromSelection]);
+
+  useEffect(() => {
+    const handler = () => updatePendingFromSelection();
+    document.addEventListener("selectionchange", handler);
+    return () => document.removeEventListener("selectionchange", handler);
+  }, [updatePendingFromSelection]);
 
   const addHighlight = useCallback(() => {
     if (pendingRange) {
@@ -272,7 +288,9 @@ function HighlightableScripture({
     <div className="relative">
       <div
         ref={containerRef}
-        onMouseUp={onMouseUp}
+        onMouseUp={onPointerUp}
+        onTouchEnd={onPointerUp}
+        onPointerUp={onPointerUp}
         className={`${scriptureSizeClass} leading-relaxed text-[var(--text-soft)] font-normal select-text cursor-text`}
         style={{ userSelect: "text" }}
       >
@@ -289,6 +307,9 @@ function HighlightableScripture({
       {showAddBtn && pendingRange && (
         <button
           type="button"
+          onPointerDown={(e) => e.preventDefault()}
+          onMouseDown={(e) => e.preventDefault()}
+          onTouchStart={(e) => e.preventDefault()}
           onClick={addHighlight}
           className="mt-2 px-3 py-1.5 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] text-[var(--text-soft)] text-sm hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
         >
