@@ -217,16 +217,19 @@ function HighlightableScripture({
   highlights,
   scriptureSizeClass,
   onAddHighlight,
+  onRemoveHighlight,
 }: {
   scriptureIndex: number;
   text: string;
   highlights: ScriptureHighlight[];
   scriptureSizeClass: string;
   onAddHighlight: (index: number, start: number, end: number) => void;
+  onRemoveHighlight: (index: number, start: number, end: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showAddBtn, setShowAddBtn] = useState(false);
   const [pendingRange, setPendingRange] = useState<{ start: number; end: number } | null>(null);
+  const [selectedHighlight, setSelectedHighlight] = useState<ScriptureHighlight | null>(null);
 
   const updatePendingFromSelection = useCallback(() => {
     const sel = window.getSelection();
@@ -278,6 +281,15 @@ function HighlightableScripture({
     return () => document.removeEventListener("selectionchange", handler);
   }, [updatePendingFromSelection]);
 
+  useEffect(() => {
+    if (!selectedHighlight) return;
+    const merged = mergeHighlights(highlights);
+    const stillExists = merged.some(
+      (h) => h.start === selectedHighlight.start && h.end === selectedHighlight.end
+    );
+    if (!stillExists) setSelectedHighlight(null);
+  }, [highlights, selectedHighlight]);
+
   const addHighlight = useCallback(() => {
     if (pendingRange) {
       onAddHighlight(scriptureIndex, pendingRange.start, pendingRange.end);
@@ -287,7 +299,36 @@ function HighlightableScripture({
     }
   }, [scriptureIndex, pendingRange, onAddHighlight]);
 
-  const segments = segmentText(text, highlights);
+  const mergedHighlights = mergeHighlights(highlights);
+  const parts: React.ReactNode[] = [];
+  let pos = 0;
+  mergedHighlights.forEach((h, idx) => {
+    if (h.start > pos) {
+      parts.push(<span key={`t-${idx}`}>{text.slice(pos, h.start)}</span>);
+    }
+    const isSelected = selectedHighlight?.start === h.start && selectedHighlight?.end === h.end;
+    parts.push(
+      <button
+        key={`h-${idx}`}
+        type="button"
+        onClick={() => setSelectedHighlight(h)}
+        className="inline p-0 m-0 bg-transparent border-0"
+        title="點擊可刪除這段畫線"
+      >
+        <mark
+          className={`rounded px-0.5 ${
+            isSelected
+              ? "bg-amber-300/90 dark:bg-amber-500/40 ring-2 ring-amber-400/60 dark:ring-amber-400/40"
+              : "bg-amber-200/80 dark:bg-amber-600/30"
+          }`}
+        >
+          {text.slice(h.start, h.end)}
+        </mark>
+      </button>
+    );
+    pos = h.end;
+  });
+  if (pos < text.length) parts.push(<span key="t-end">{text.slice(pos)}</span>);
 
   return (
     <div className="relative">
@@ -299,16 +340,29 @@ function HighlightableScripture({
         className={`${scriptureSizeClass} leading-relaxed text-[var(--text-soft)] font-normal select-text cursor-text`}
         style={{ userSelect: "text" }}
       >
-        {segments.map((seg, i) =>
-          seg.highlight ? (
-            <mark key={i} className="bg-amber-200/80 dark:bg-amber-600/30 rounded px-0.5">
-              {seg.text}
-            </mark>
-          ) : (
-            <span key={i}>{seg.text}</span>
-          )
-        )}
+        {mergedHighlights.length ? parts : text}
       </div>
+      {selectedHighlight && (
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onRemoveHighlight(scriptureIndex, selectedHighlight.start, selectedHighlight.end);
+              setSelectedHighlight(null);
+            }}
+            className="px-3 py-1.5 rounded-sm border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-200 text-sm hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+          >
+            刪除畫線
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedHighlight(null)}
+            className="px-3 py-1.5 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] text-[var(--text-soft)] text-sm hover:bg-[var(--bg-softer)]/70 transition-colors"
+          >
+            取消
+          </button>
+        </div>
+      )}
       {showAddBtn && pendingRange && (
         <button
           type="button"
@@ -440,6 +494,25 @@ export default function DevotionPage() {
       const list = [...(prev[key] ?? []), { start, end }];
       return { ...prev, [key]: mergeHighlights(list) };
     });
+  }, []);
+
+  const removeHighlight = useCallback((scriptureIndex: number, start: number, end: number) => {
+    const key = String(scriptureIndex);
+    setHighlightsPerScripture((prev) => {
+      const list = prev[key] ?? [];
+      const nextList = list.filter((h) => !(h.start === start && h.end === end));
+      const next: HighlightsPerScripture = { ...prev };
+      if (nextList.length) next[key] = nextList;
+      else delete next[key];
+      return next;
+    });
+    const snippetId = `${scriptureIndex}-${start}-${end}`;
+    setMeditationBySnippet((prev) => {
+      if (!(snippetId in prev)) return prev;
+      const { [snippetId]: _removed, ...rest } = prev;
+      return rest;
+    });
+    setExpandedSnippetIds((prev) => prev.filter((id) => id !== snippetId));
   }, []);
 
   return (
@@ -781,7 +854,7 @@ export default function DevotionPage() {
       {phase === "scripture" && (
         <section className="max-w-2xl w-full animate-fade-in mt-14">
           <p className="text-[var(--accent-subtle)] text-sm mb-4">
-            選取經文字句後按「加入畫線」，可到默想頁整理所思。
+            選取經文字句後按「加入畫線」，可到默想頁整理所思。也可以點擊已畫線的字句來刪除畫線。
           </p>
           <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-6">
             {todayScriptures.map((scripture, index) => (
@@ -795,6 +868,7 @@ export default function DevotionPage() {
                   highlights={highlightsPerScripture[String(index)] ?? []}
                   scriptureSizeClass={scriptureSizeClass}
                   onAddHighlight={addHighlight}
+                  onRemoveHighlight={removeHighlight}
                 />
               </div>
             ))}
