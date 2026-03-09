@@ -234,7 +234,7 @@ function HighlightableScripture({
     if (!sel || !node) return;
 
     // 手機點擊「加入畫線」時選取可能會先被清掉；若已經有 pendingRange 就先保留
-    if (sel.isCollapsed) {
+    if (sel.isCollapsed || sel.rangeCount === 0) {
       if (!pendingRange) {
         setShowAddBtn(false);
         setPendingRange(null);
@@ -242,17 +242,22 @@ function HighlightableScripture({
       return;
     }
 
-    if (!node.contains(sel.anchorNode) || !node.contains(sel.focusNode)) {
+    const userRange = sel.getRangeAt(0);
+    if (!node.contains(userRange.startContainer) || !node.contains(userRange.endContainer)) {
       setShowAddBtn(false);
       return;
     }
     try {
-      const r = document.createRange();
-      r.setStart(node, 0);
-      r.setEnd(sel.anchorNode!, sel.anchorOffset);
-      const start = r.toString().length;
-      r.setEnd(sel.focusNode!, sel.focusOffset);
-      const end = r.toString().length;
+      const startRange = document.createRange();
+      startRange.selectNodeContents(node);
+      startRange.setEnd(userRange.startContainer, userRange.startOffset);
+      const start = startRange.toString().length;
+
+      const endRange = document.createRange();
+      endRange.selectNodeContents(node);
+      endRange.setEnd(userRange.endContainer, userRange.endOffset);
+      const end = endRange.toString().length;
+
       const startOff = Math.min(start, end);
       const endOff = Math.max(start, end);
       if (startOff >= endOff) return;
@@ -307,9 +312,15 @@ function HighlightableScripture({
       {showAddBtn && pendingRange && (
         <button
           type="button"
-          onPointerDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            addHighlight();
+          }}
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            addHighlight();
+          }}
           onClick={addHighlight}
           className="mt-2 px-3 py-1.5 rounded-sm border border-[var(--border-soft)] bg-[var(--bg-softer)] text-[var(--text-soft)] text-sm hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
         >
